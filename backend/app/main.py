@@ -5,6 +5,7 @@ iOS／Android）。此處**不存在**任何依客戶端分岔的路由或中介
 """
 
 import logging
+import os
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,9 +19,21 @@ logging.basicConfig(level=logging.INFO)
 
 settings = get_settings()
 
+# Vercel 的 rewrite 會把請求路徑改寫成 /api/index/<原始路徑>，FastAPI 收到的
+# 因此帶有 /api/index 前綴。root_path 正是為這種「位於路徑前綴的反向代理之後」
+# 的情境而設計——Starlette 在路由比對前會先把它從 path 剝除。
+#
+# 用 VERCEL 這個環境變數判斷（Vercel 於所有部署自動注入），本機為空字串，
+# 兩種環境共用同一份程式碼。
+#
+# 曾嘗試在 api/index.py 包一層 ASGI 中介層改寫 scope["path"]，但 Vercel 的
+# Python runtime 會直接取用模組中的 FastAPI 實例，不經過該包裝函式。
+_ROOT_PATH = "/api/index" if os.getenv("VERCEL") else ""
+
 app = FastAPI(
     title="Caluli 飲食紀錄 API（第一輪 MVP）",
     version="0.1.0",
+    root_path=_ROOT_PATH,
     description=(
         "LIFF 與一般網頁共用的單一後端 API。\n\n"
         "免責：本 API 提供的營養數值為估算參考，不構成醫療級營養診斷或"
