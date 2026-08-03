@@ -10,9 +10,11 @@ import os
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.api.v1 import analytics, auth, foods, meal_records, profile, recognitions
 from app.core.config import get_settings
+from app.core.deps import DbSession
 from app.core.errors import AppError, app_error_handler
 
 logging.basicConfig(level=logging.INFO)
@@ -62,8 +64,21 @@ app.include_router(v1)
 
 
 @app.get("/healthz", tags=["ops"])
-def healthz() -> dict[str, str]:
-    return {"status": "ok"}
+def healthz(db: DbSession) -> dict[str, str]:
+    """存活檢查，並回報資料庫可達性。
+
+    刻意**不因資料庫不可用而回非 200**——這支端點同時作為部署診斷用，
+    需要能區分「應用沒起來」（連不上／404）與「應用起來了但資料庫不通」。
+    兩者若都表現為失敗，排查時無從分辨。
+    """
+    try:
+        db.execute(text("select 1"))
+        database = "ok"
+    except Exception as exc:  # noqa: BLE001 — 診斷用途，任何連線問題都要能回報
+        logging.warning("健康檢查的資料庫查詢失敗：%s", exc)
+        database = f"unreachable: {type(exc).__name__}"
+
+    return {"status": "ok", "database": database}
 
 
 @app.api_route(
