@@ -1,0 +1,58 @@
+[project]
+name = "caluli-backend"
+version = "0.1.0"
+description = "Caluli 飲食紀錄 API（第一輪 MVP）"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14",
+    "psycopg[binary]>=3.2",
+    "httpx>=0.28",
+    "pyjwt>=2.10",
+    "pillow>=11.0",
+    "python-multipart>=0.0.17",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "testcontainers[postgres]>=4.8",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+ignore = [
+    "B008",  # FastAPI 的 Depends() 預設值是慣用寫法
+    "N811",  # `UUID as PgUUID` 是 SQLAlchemy 的標準別名慣例
+]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "error::DeprecationWarning",
+    # 第三方套件的 deprecation 不應讓測試失敗——否則 Docker 不可用時
+    # 整合測試會在 skip 之前就 error。
+    "ignore::DeprecationWarning:testcontainers.*",
+    "ignore::DeprecationWarning:docker.*",
+]

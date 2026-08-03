@@ -1,0 +1,10 @@
+[project]
+name = "recognition-stub"
+version = "0.1.0"
+description = "本機開發用的假辨識服務"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.17",
+]

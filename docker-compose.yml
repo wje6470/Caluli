@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: caluli-postgres
+    environment:
+      POSTGRES_USER: caluli
+      POSTGRES_PASSWORD: caluli
+      POSTGRES_DB: caluli
+    ports:
+      - "5432:5432"
+    volumes:
+      - caluli-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U caluli -d caluli"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  recognition-stub:
+    # 本機開發用的假辨識服務，真服務就緒前替代之。
+    # 模式切換見 specs/001-diet-log-mvp/contracts/recognition-service.md
+    build:
+      context: ./tools/recognition-stub
+    container_name: caluli-recognition-stub
+    ports:
+      - "8900:8900"
+    environment:
+      STUB_DEFAULT_MODE: normal
+
+volumes:
+  caluli-pgdata:

@@ -1,0 +1,739 @@
+openapi: 3.1.0
+info:
+  title: Caluli 飲食紀錄 API（第一輪 MVP）
+  version: 0.1.0
+  description: |
+    LIFF、一般網頁共用的單一後端 API（憲章原則 III）。
+    後續輪次的 iOS／Android 客戶端將呼叫同一組端點，不另開分支。
+
+    設計要點：
+    - 所有登入入口共用同一套驗證核心，回應結構不含「來源入口」資訊（憲章原則 I）。
+    - 辨識端點採資源導向，回應永遠是一個 recognition 資源並帶 status，
+      使未來由同步改為非同步時不需破壞契約（見 research.md R-07）。
+    - 辨識品項回應必須包含 per_100g 原始值，前端才能在不呼叫後端的情況下
+      即時重算份量（見 research.md R-09）。
+servers:
+  - url: /api/v1
+tags:
+  - name: auth
+  - name: profile
+  - name: recognition
+  - name: records
+  - name: analytics
+  - name: foods
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/line/liff:
+    post:
+      tags: [auth]
+      security: []
+      summary: LIFF 入口登入（以 LINE ID Token 交換本站 session）
+      description: |
+        前端在 LIFF 環境下取得 ID Token 後呼叫。後端驗證 ID Token 後，
+        交由與網頁 OAuth 完全相同的核心流程建立或取得使用者。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token:
+                  type: string
+      responses:
+        "200":
+          description: 登入成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/line/callback:
+    post:
+      tags: [auth]
+      security: []
+      summary: 一般網頁 OAuth 回呼（以 authorization code 交換本站 session）
+      description: |
+        非 LIFF 環境使用。後端以 code 向 LINE 換取 ID Token 後，
+        交給與 /auth/line/liff 相同的核心驗證流程——差異僅止於取得 ID Token 的方式。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, redirect_uri, state]
+              properties:
+                code: { type: string }
+                redirect_uri: { type: string, format: uri }
+                state: { type: string }
+      responses:
+        "200":
+          description: 登入成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /me:
+    get:
+      tags: [profile]
+      summary: 取得目前使用者與建檔狀態
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user, profile_completed]
+                properties:
+                  user: { $ref: "#/components/schemas/User" }
+                  profile_completed:
+                    type: boolean
+                    description: false 時前端必須導向個人資訊填寫流程（FR-013）
+                  profile:
+                    oneOf:
+                      - $ref: "#/components/schemas/HealthProfile"
+                      - type: "null"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /me/profile:
+    put:
+      tags: [profile]
+      summary: 建立或更新個人健康檔案（同時重算每日目標）
+      description: |
+        BMR／TDEE 與三大營養素目標一律由後端計算，請求中若帶這些欄位會被忽略。
+        重算不影響任何既有飲食紀錄（FR-016）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HealthProfileInput" }
+      responses:
+        "200":
+          description: 已建立或更新
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthProfile" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /dashboard:
+    get:
+      tags: [analytics]
+      summary: 取得指定日期的攝取概況與紀錄清單
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: 未帶則為今日（Asia/Taipei）
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /recognitions:
+    post:
+      tags: [recognition]
+      summary: 上傳照片並取得辨識結果
+      description: |
+        本輪為同步實作：後端呼叫同機辨識服務並等待結果，於同一回應回傳。
+        回應仍採資源形狀（含 id 與 status），未來改為非同步時可直接回 202 +
+        status="processing"，前端輪詢 GET /recognitions/{id}，契約不需破壞性變更。
+
+        **items 為空陣列是成功結果，不是錯誤**——代表照片中未偵測到食物，
+        前端須顯示引導畫面而非渲染空清單（FR-027）。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                  description: JPEG／PNG／WebP，上限 10 MB
+      responses:
+        "200":
+          description: 辨識完成（items 可能為空陣列）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Recognition" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/RecognitionBadResponse"
+        "503":
+          $ref: "#/components/responses/RecognitionUnavailable"
+        "504":
+          $ref: "#/components/responses/RecognitionTimeout"
+
+  /recognitions/{recognitionId}:
+    get:
+      tags: [recognition]
+      summary: 讀取辨識資源
+      description: 同步實作下用於重新取得結果；非同步遷移後即為輪詢端點。
+      parameters:
+        - $ref: "#/components/parameters/RecognitionId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Recognition" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /recognitions/{recognitionId}/retry:
+    post:
+      tags: [recognition]
+      summary: 以既有照片重新辨識
+      description: |
+        重試不需要重新上傳照片（FR-028）——後端重用第一次請求時已存檔的照片。
+      parameters:
+        - $ref: "#/components/parameters/RecognitionId"
+      responses:
+        "200":
+          description: 重新辨識完成
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Recognition" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/RecognitionUnavailable"
+        "504":
+          $ref: "#/components/responses/RecognitionTimeout"
+
+  /meal-records:
+    get:
+      tags: [records]
+      summary: 取得指定日期的飲食紀錄
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [records]
+                properties:
+                  records:
+                    type: array
+                    items: { $ref: "#/components/schemas/MealRecord" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [records]
+      summary: 儲存一筆飲食紀錄
+      description: |
+        後端會以 per_100g × portion_grams / 100 重新驗算每個品項的營養值；
+        客戶端送出的換算結果若與驗算差異超過容忍值，以後端計算值為準（R-09）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MealRecordInput" }
+      responses:
+        "201":
+          description: 已建立
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MealRecord" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /meal-records/{recordId}:
+    patch:
+      tags: [records]
+      summary: 編輯既有紀錄
+      parameters:
+        - $ref: "#/components/parameters/RecordId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MealRecordInput" }
+      responses:
+        "200":
+          description: 已更新
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MealRecord" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags: [records]
+      summary: 刪除紀錄（連同照片檔案）
+      parameters:
+        - $ref: "#/components/parameters/RecordId"
+      responses:
+        "204":
+          description: 已刪除
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /meal-records/{recordId}/photo:
+    get:
+      tags: [records]
+      summary: 取得紀錄照片
+      description: 經後端驗證擁有者後回傳；不開放靜態目錄直接存取（R-10）。
+      parameters:
+        - $ref: "#/components/parameters/RecordId"
+      responses:
+        "200":
+          description: 影像檔
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /trends:
+    get:
+      tags: [analytics]
+      summary: 取得攝取趨勢
+      description: 區間內沒有紀錄的日期一律回傳 0，不略過（FR-054）。
+      parameters:
+        - name: range_days
+          in: query
+          required: true
+          schema: { type: integer, enum: [7, 14, 30] }
+        - name: metric
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [calories, protein, carbs, fat]
+            default: calories
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrendResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /foods/search:
+    get:
+      tags: [foods]
+      summary: 搜尋通用食物營養對照表
+      description: |
+        供辨識結果確認畫面上「手動修正食物名稱」使用（FR-037）。
+        僅涵蓋通用食物對照表，與店家餐點資料完全無關（憲章原則 V）。
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 20, maximum: 50 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [foods]
+                properties:
+                  foods:
+                    type: array
+                    items: { $ref: "#/components/schemas/FoodReference" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    RecognitionId:
+      name: recognitionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RecordId:
+      name: recordId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+    User:
+      type: object
+      required: [id, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+        picture_url:
+          oneOf:
+            - { type: string, format: uri }
+            - { type: "null" }
+
+    SessionResponse:
+      type: object
+      required: [access_token, token_type, expires_in, user, profile_completed]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, const: Bearer }
+        expires_in: { type: integer, description: 秒 }
+        user: { $ref: "#/components/schemas/User" }
+        profile_completed: { type: boolean }
+
+    HealthProfileInput:
+      type: object
+      required: [gender, age_years, height_cm, weight_kg, activity_level]
+      properties:
+        gender: { type: string, enum: [male, female] }
+        age_years: { type: integer, minimum: 15, maximum: 90 }
+        height_cm: { type: number, minimum: 100, maximum: 250 }
+        weight_kg: { type: number, minimum: 25, maximum: 300 }
+        activity_level: { type: string, enum: [low, moderate, high] }
+
+    HealthProfile:
+      allOf:
+        - $ref: "#/components/schemas/HealthProfileInput"
+        - type: object
+          required:
+            [bmr_kcal, tdee_kcal, target_protein_g, target_carbs_g, target_fat_g, computed_at]
+          properties:
+            bmr_kcal: { type: number }
+            tdee_kcal: { type: number, description: 即每日建議熱量 }
+            target_protein_g: { type: number }
+            target_carbs_g: { type: number }
+            target_fat_g: { type: number }
+            computed_at: { type: string, format: date-time }
+
+    Nutrients:
+      type: object
+      required: [calories_kcal, protein_g, carbs_g, fat_g]
+      properties:
+        calories_kcal: { type: number }
+        protein_g: { type: number }
+        carbs_g: { type: number }
+        fat_g: { type: number }
+
+    Per100g:
+      type: object
+      description: |
+        每 100 公克的原始營養值。前端據此以
+        value = per_100g × portion_grams / 100 即時重算，不再呼叫後端（R-09）。
+        **此欄位為必要，移除將使份量即時調整無法運作。**
+      required: [calories_kcal, protein_g, carbs_g, fat_g]
+      properties:
+        calories_kcal: { type: number }
+        protein_g: { type: number }
+        carbs_g: { type: number }
+        fat_g: { type: number }
+
+    FoodCandidate:
+      type: object
+      description: HF 分類模型的 Top-K 候選之一，依信心度排序（FR-035）
+      required: [name, confidence]
+      properties:
+        food_reference_id:
+          oneOf:
+            - { type: string, format: uuid }
+            - { type: "null" }
+        name: { type: string }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        default_portion_grams:
+          oneOf:
+            - { type: number }
+            - { type: "null" }
+        per_100g:
+          oneOf:
+            - { $ref: "#/components/schemas/Per100g" }
+            - type: "null"
+
+    FoodReference:
+      type: object
+      required: [id, name, default_portion_grams, per_100g]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        default_portion_grams: { type: number }
+        per_100g: { $ref: "#/components/schemas/Per100g" }
+
+    RecognitionItem:
+      type: object
+      required: [name, default_portion_grams, candidates, nutrition_available]
+      properties:
+        food_reference_id:
+          oneOf:
+            - { type: string, format: uuid }
+            - { type: "null" }
+        name: { type: string }
+        confidence:
+          oneOf:
+            - { type: number }
+            - { type: "null" }
+        default_portion_grams:
+          oneOf:
+            - { type: number }
+            - { type: "null" }
+        per_100g:
+          oneOf:
+            - { $ref: "#/components/schemas/Per100g" }
+            - type: "null"
+        nutrition_available:
+          type: boolean
+          description: |
+            false 代表該食物在通用食物營養對照表中查無資料，
+            前端須標示無法自動換算並允許使用者自行填入或移除（FR-037）。
+        candidates:
+          type: array
+          description: 其他候選名稱，供使用者改選（FR-035）
+          items: { $ref: "#/components/schemas/FoodCandidate" }
+        bounding_box:
+          oneOf:
+            - type: object
+              required: [x, y, width, height]
+              properties:
+                x: { type: number }
+                y: { type: number }
+                width: { type: number }
+                height: { type: number }
+            - type: "null"
+
+    Recognition:
+      type: object
+      required: [id, status, items]
+      properties:
+        id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [processing, completed, failed]
+          description: |
+            本輪同步實作下只會出現 completed／failed。
+            processing 為非同步遷移預留，前端狀態機須先行支援（R-07）。
+        items:
+          type: array
+          description: 空陣列 = 未偵測到食物（仍為 completed，非錯誤）
+          items: { $ref: "#/components/schemas/RecognitionItem" }
+        message:
+          oneOf:
+            - { type: string }
+            - { type: "null" }
+          description: |
+            辨識服務回傳的說明訊息，原樣保留。
+            items 為空時前端須顯示此訊息，例如「沒有偵測到食物，請換一張再試試」。
+        retry_count: { type: integer }
+        requested_at: { type: string, format: date-time }
+        completed_at:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: "null" }
+
+    MealItemInput:
+      type: object
+      required: [food_name, portion_grams, per_100g]
+      properties:
+        food_reference_id:
+          oneOf:
+            - { type: string, format: uuid }
+            - { type: "null" }
+        food_name: { type: string, minLength: 1 }
+        portion_grams: { type: number, exclusiveMinimum: 0, maximum: 5000 }
+        default_portion_grams:
+          oneOf:
+            - { type: number }
+            - { type: "null" }
+        per_100g: { $ref: "#/components/schemas/Per100g" }
+        recognition_confidence:
+          oneOf:
+            - { type: number }
+            - { type: "null" }
+        is_user_modified: { type: boolean, default: false }
+
+    MealItem:
+      allOf:
+        - $ref: "#/components/schemas/MealItemInput"
+        - type: object
+          required: [id, nutrients]
+          properties:
+            id: { type: string, format: uuid }
+            nutrients:
+              allOf:
+                - $ref: "#/components/schemas/Nutrients"
+              description: 後端驗算後的權威數值
+
+    MealRecordInput:
+      type: object
+      required: [meal_type, items]
+      properties:
+        recognition_id:
+          oneOf:
+            - { type: string, format: uuid }
+            - { type: "null" }
+          description: 來源辨識工作；帶入後後端會沿用該次的照片
+        meal_type: { type: string, enum: [breakfast, lunch, dinner, snack] }
+        captured_at:
+          type: string
+          format: date-time
+          description: 未帶則為現在時間；歸屬日期由後端依 Asia/Taipei 換算
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/MealItemInput" }
+
+    MealRecord:
+      type: object
+      required: [id, record_date, meal_type, captured_at, items, totals, has_photo]
+      properties:
+        id: { type: string, format: uuid }
+        record_date: { type: string, format: date }
+        meal_type: { type: string, enum: [breakfast, lunch, dinner, snack] }
+        captured_at: { type: string, format: date-time }
+        has_photo: { type: boolean }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/MealItem" }
+        totals: { $ref: "#/components/schemas/Nutrients" }
+
+    DashboardResponse:
+      type: object
+      required: [date, targets, consumed, remaining, over_target, records]
+      properties:
+        date: { type: string, format: date }
+        targets: { $ref: "#/components/schemas/Nutrients" }
+        consumed: { $ref: "#/components/schemas/Nutrients" }
+        remaining:
+          allOf:
+            - $ref: "#/components/schemas/Nutrients"
+          description: targets − consumed；已超標時為負值，前端須明確標示（FR-048）
+        over_target:
+          type: boolean
+          description: 已攝取熱量是否超過每日建議熱量
+        records:
+          type: array
+          items: { $ref: "#/components/schemas/MealRecord" }
+
+    TrendResponse:
+      type: object
+      required: [range_days, metric, points, average, target_achievement_rate]
+      properties:
+        range_days: { type: integer }
+        metric: { type: string, enum: [calories, protein, carbs, fat] }
+        points:
+          type: array
+          description: 完整日期序列，無紀錄的日期 value 為 0
+          items:
+            type: object
+            required: [date, value]
+            properties:
+              date: { type: string, format: date }
+              value: { type: number }
+        target:
+          oneOf:
+            - { type: number }
+            - { type: "null" }
+        average: { type: number }
+        target_achievement_rate:
+          type: number
+          description: 區間內達標天數比例（0–1）
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, retryable]
+          properties:
+            code: { type: string }
+            message:
+              type: string
+              description: 可直接呈現給使用者的說明，不含技術細節
+            retryable:
+              type: boolean
+              description: 前端據此決定是否顯示「重試」，不需自行維護 code 對照表
+
+  responses:
+    Unauthorized:
+      description: 未登入或憑證失效（前端須導回登入並記住原目標路徑）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: 資源不存在，或不屬於目前使用者（刻意不區分，避免洩漏存在性）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: 輸入未通過驗證（例如身高體重超出合理生理範圍）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PayloadTooLarge:
+      description: 照片超過 10 MB
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnsupportedMediaType:
+      description: 照片格式不支援
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RecognitionTimeout:
+      description: 辨識服務逾時（retryable = true，重試不需重新上傳）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RecognitionUnavailable:
+      description: 辨識服務無法連線或回 5xx（retryable = true）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RecognitionBadResponse:
+      description: 辨識服務回應無法解析（retryable = true）
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
