@@ -28,6 +28,7 @@ Create Date: 2026-08-03
 ================================================================================
 """
 
+import contextlib
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -42,7 +43,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto"')
+    # gen_random_uuid() 自 PostgreSQL 13 起已是核心函式，不再依賴 pgcrypto。
+    # 這裡仍嘗試建立擴充，純粹是為了相容更舊的自架 PostgreSQL；
+    # 在託管服務（如 Supabase）上，pgcrypto 通常已預裝於 extensions schema，
+    # 且應用角色未必有 CREATE EXTENSION 權限——失敗不應中斷 migration。
+    with contextlib.suppress(Exception):
+        op.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto"')
 
     op.create_table(
         "users",

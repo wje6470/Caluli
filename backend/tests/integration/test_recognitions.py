@@ -91,9 +91,18 @@ def photo_root(tmp_path: Path):
 @pytest.fixture
 def client(db_session: Session, user: User, tmp_path: Path, monkeypatch):
     """以 db_session 與登入使用者覆寫依賴，並把照片寫入暫存目錄。"""
+    # 強制走檔案系統實作：supabase_url 留空即回退到 FileSystemPhotoStorage。
     monkeypatch.setattr(
         "app.services.photo_storage.get_settings",
-        lambda: type("S", (), {"photo_storage_root": tmp_path})(),
+        lambda: type(
+            "S",
+            (),
+            {
+                "photo_storage_root": tmp_path,
+                "supabase_url": "",
+                "supabase_service_key": "",
+            },
+        )(),
     )
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_current_user] = lambda: user

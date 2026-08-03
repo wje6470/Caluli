@@ -12,7 +12,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# ⚠️ set_main_option 的值會經過 ConfigParser 的字串插值，其中 % 具特殊意義。
+# URL-encoded 的密碼（例如 @ → %40）會被當成插值語法而拋
+# "invalid interpolation syntax"，因此必須把 % 逸出為 %%。
+# 注意這只影響 Alembic；應用本身用 create_engine 直接吃原始 URL，不需處理。
+config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 

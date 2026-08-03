@@ -7,6 +7,7 @@ NUMERIC 精度與 ON DELETE SET NULL 的實際行為，SQLite 的差異會讓問
 Docker 不可用時整合測試自動 skip，讓不依賴 DB 的單元／契約測試仍可跑。
 """
 
+import contextlib
 import os
 import sys
 import warnings
@@ -64,7 +65,9 @@ def db_engine(postgres_url: str):
     from app.db.models import Base
 
     engine = create_engine(postgres_url, future=True)
-    with engine.begin() as conn:
+    # 與 migration 同樣採 best-effort：託管服務上可能無 CREATE EXTENSION 權限，
+    # 而 gen_random_uuid() 自 PostgreSQL 13 起已是核心函式。
+    with contextlib.suppress(Exception), engine.begin() as conn:
         conn.execute(text('CREATE EXTENSION IF NOT EXISTS "pgcrypto"'))
     Base.metadata.create_all(engine)
     yield engine

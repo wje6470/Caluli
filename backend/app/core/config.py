@@ -11,7 +11,18 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # --- 資料庫 ---
-    database_url: str = "postgresql+psycopg://caluli:caluli@localhost:5432/caluli"
+    #
+    # 本機：postgresql+psycopg://caluli:caluli@127.0.0.1:55432/caluli_dev
+    #
+    # Supabase：使用 Dashboard 的 Connection string，並加上 +psycopg 與 sslmode。
+    #   postgresql+psycopg://postgres.<ref>:<pw>@<host>.pooler.supabase.com:5432/postgres?sslmode=require
+    #
+    #   ⚠️ 選用 **Session pooler（5432）** 而非 Transaction pooler（6543）：
+    #      後端是長時間運行的 uvicorn 並自帶連線池，session 模式行為與直連一致；
+    #      transaction 模式不支援 prepared statements，psycopg 需額外停用才不會出錯。
+    #   ⚠️ 直連端點（db.<ref>.supabase.co）在新專案僅提供 IPv6，
+    #      無 IPv4 add-on 時連不上，故一律走 pooler 主機。
+    database_url: str = "postgresql+psycopg://caluli:caluli@127.0.0.1:55432/caluli_dev"
 
     # --- 會話 ---
     # 長度須 ≥ 32 bytes：低於此值 PyJWT 會對 HMAC-SHA256 發出
@@ -32,7 +43,21 @@ class Settings(BaseSettings):
     # ⚠️ OQ-4：暫定值，需以 recognition_jobs.duration_ms 實測後校準
     recognition_timeout_seconds: float = 30.0
 
+    # --- Supabase Storage（正式環境的照片儲存）---
+    #
+    # Vercel serverless 的檔案系統唯讀且短暫，無法保存使用者照片，
+    # 故正式環境改存 Supabase Storage。兩者皆設定時優先使用 Supabase。
+    #
+    # ⚠️ bucket 必須設為 **private**。照片只透過後端的
+    #    /meal-records/{id}/photo 端點提供（該端點驗證擁有者）；
+    #    設為 public 等同繞過 FR-044 的資料隔離。
+    supabase_url: str = ""
+    supabase_service_key: str = ""
+    photo_bucket: str = "meal-photos"
+    storage_timeout_seconds: float = 20.0
+
     # --- 照片 ---
+    #: 僅在未設定 Supabase 時使用（本機開發）。
     photo_storage_root: Path = Path("./var/photos")
     photo_max_bytes: int = 10 * 1024 * 1024
     photo_allowed_content_types: tuple[str, ...] = (
@@ -42,6 +67,11 @@ class Settings(BaseSettings):
     )
 
     # --- 其他 ---
+    #: 部署於 Vercel 等 serverless 平台時設為 true。
+    #: 影響資料庫連線策略（見 db/session.py）——serverless 下必須關閉
+    #: SQLAlchemy 連線池並停用 prepared statements。
+    serverless: bool = False
+
     app_timezone: str = "Asia/Taipei"
     #: LINE Login 的 Callback URL 已不接受 http，本機開發常改跑 HTTPS
     #: 或透過通道，因此預設同時涵蓋這些來源。走 ngrok／cloudflared 時

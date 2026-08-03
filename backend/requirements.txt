@@ -1,0 +1,14 @@
+# Vercel 的 Python runtime 讀 requirements.txt，不支援 uv 的 pyproject 解析。
+# 內容需與 pyproject.toml 的 dependencies 保持一致。
+#
+# 註：不含 dev 相依（pytest 等），Vercel 上不需要。
+fastapi>=0.115
+pydantic>=2.9
+pydantic-settings>=2.6
+sqlalchemy>=2.0.36
+alembic>=1.14
+psycopg[binary]>=3.2
+httpx>=0.28
+pyjwt>=2.10
+pillow>=11.0
+python-multipart>=0.0.17
