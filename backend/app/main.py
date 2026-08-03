@@ -6,8 +6,9 @@ iOS／Android）。此處**不存在**任何依客戶端分岔的路由或中介
 
 import logging
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.v1 import analytics, auth, foods, meal_records, profile, recognitions
 from app.core.config import get_settings
@@ -50,3 +51,27 @@ app.include_router(v1)
 @app.get("/healthz", tags=["ops"])
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.api_route(
+    "/{unmatched_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+    include_in_schema=False,
+)
+def not_found(request: Request, unmatched_path: str) -> JSONResponse:
+    """未匹配任何路由時，回報**實際收到的路徑**。
+
+    這條必須註冊在所有 router 之後，因此只會接到真正沒對上的請求。
+
+    存在的理由：反向代理或平台層的 rewrite（例如 Vercel）可能改寫請求
+    路徑，此時 FastAPI 對每個請求都回 404，外觀與「路由沒註冊」完全相同，
+    從外部無從分辨。把收到的路徑回報出來，可讓這類問題一眼看穿而不必猜。
+    """
+    return JSONResponse(
+        status_code=404,
+        content={
+            "detail": "Not Found",
+            "received_path": request.url.path,
+            "root_path": request.scope.get("root_path", ""),
+        },
+    )
