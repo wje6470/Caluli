@@ -1,14 +1,16 @@
-# Vercel 的 Python runtime 讀 requirements.txt，不支援 uv 的 pyproject 解析。
-# 內容需與 pyproject.toml 的 dependencies 保持一致。
+# Vercel 的 Python runtime 讀 requirements.txt（不支援 uv 的 pyproject 解析）。
 #
-# 註：不含 dev 相依（pytest 等），Vercel 上不需要。
+# 只列**執行期**所需，刻意不含：
+#   alembic  — migration 在部署前另外執行，不在函式內跑
+#   pillow   — 照片壓縮在前端做（lib/capture/image.ts），後端完全沒用到
+#   pytest 等 dev 相依
+#
+# 減少相依可縮短冷啟動並降低建置失敗的機率。
 fastapi>=0.115
 pydantic>=2.9
 pydantic-settings>=2.6
 sqlalchemy>=2.0.36
-alembic>=1.14
 psycopg[binary]>=3.2
 httpx>=0.28
 pyjwt>=2.10
-pillow>=11.0
 python-multipart>=0.0.17
