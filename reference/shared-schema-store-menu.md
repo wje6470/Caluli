@@ -15,3 +15,4 @@ menu_items 表：
 - protein_g
 - carbs_g
 - fat_g
+- created_at, updated_at
