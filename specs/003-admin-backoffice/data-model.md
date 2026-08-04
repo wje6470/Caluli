@@ -84,10 +84,10 @@ CONSTRAINT ck_stores_longitude_range
 | `id` | `UUID` | PK, `server_default gen_random_uuid()` | ✅ `id` | |
 | `store_id` | `UUID` | `NOT NULL`, FK → `stores.id` **ON DELETE CASCADE** | ✅ `store_id（外鍵，關聯 stores）` | 強歸屬，見 [R-07](./research.md#r-07menu_itemsstore_id-的-on-delete-規則) |
 | `name` | `VARCHAR(255)` | `NOT NULL` | ✅ `name（餐點名稱）` | 不設 UNIQUE（FR 允許同店同名） |
-| `calories` | `NUMERIC(7,2)` | `NOT NULL`, `CHECK >= 0` | ✅ `calories` | **不加單位後綴**，逐字沿用契約 |
-| `protein_g` | `NUMERIC(6,2)` | `NOT NULL`, `CHECK >= 0` | ✅ `protein_g` | |
-| `carbs_g` | `NUMERIC(6,2)` | `NOT NULL`, `CHECK >= 0` | ✅ `carbs_g` | |
-| `fat_g` | `NUMERIC(6,2)` | `NOT NULL`, `CHECK >= 0` | ✅ `fat_g` | |
+| `calories` | `NUMERIC(7,2)` | **`NULL` 允許**, `CHECK >= 0` | ✅ `calories` | **不加單位後綴**，逐字沿用契約。空值＝店家未提供，≠ 0（見下方說明） |
+| `protein_g` | `NUMERIC(6,2)` | **`NULL` 允許**, `CHECK >= 0` | ✅ `protein_g` | 同上 |
+| `carbs_g` | `NUMERIC(6,2)` | **`NULL` 允許**, `CHECK >= 0` | ✅ `carbs_g` | 同上 |
+| `fat_g` | `NUMERIC(6,2)` | **`NULL` 允許**, `CHECK >= 0` | ✅ `fat_g` | 同上 |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL`, `server_default now()` | ✅ `created_at` | **2026-08-04 契約新增**，與 `stores` 一致 |
 | `updated_at` | `TIMESTAMPTZ` | `NOT NULL`, `server_default now()`, `onupdate` | ✅ `updated_at` | 同上 |
 
@@ -105,6 +105,23 @@ FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
 
 `>= 0` 而非 `> 0`：FR-032 明確允許 0（零卡飲料、無脂餐點）。
 
+> **PostgreSQL 的 NULL 與 CHECK**：`CHECK (calories >= 0)` 在 `calories IS NULL` 時求值為 `UNKNOWN`，而 CHECK 約束**只在結果為 `FALSE` 時才拒絕**，故空值可正常寫入，不需要額外加 `calories IS NULL OR ...`。此處與 `stores` 的座標範圍約束寫法不同（那裡明寫了 `IS NULL OR`）是刻意的——座標的成對約束本身需要判斷空值，寫成一致形式反而混淆；此處保持最精簡即可。
+
+### 四個營養欄位為何是 nullable（2026-08-04 定案）
+
+| 狀態 | 資料庫值 | 語意 |
+|------|---------|------|
+| 店家未提供該項數值 | `NULL` | 未知 |
+| 該項確實為零 | `0` | 已知為 0（零卡飲料、無脂餐點） |
+
+**若設為 `NOT NULL`，兩者在寫入當下就被壓成同一個 0，且此區別永久無法還原**——這與「`menu_items` 補時間戳」所依據的不可逆性論據是同一類。另一個直接後果是：管理員遇到店家沒提供蛋白質資料時，會被迫填入一個不實的 0，等同系統主動產生錯誤資料。
+
+此項由第二輪於其 plan 階段提出（其 OQ-2b），經需求提出者確認採 nullable，並已同步回共用契約檔。
+
+**四個欄位彼此獨立**，不要求同時填寫或同時留空——與 `stores` 的座標成對規則不同，不可比照。
+
+**對第二輪（讀取端）的影響**：呈現時須區分「無資料」與「0」，且空值不得納入任何數值計算或排序比較。此規則已寫入共用契約檔的「欄位語意補充」。
+
 ### 索引
 
 ```sql
@@ -118,7 +135,8 @@ CREATE INDEX ix_menu_items_store ON menu_items (store_id);
 | 規則 | 來源 | 錯誤碼 |
 |------|------|--------|
 | `name` 非空白字串 | FR-032 | `VALIDATION_ERROR` |
-| 四項數值皆為非負數字 | FR-032 | `VALIDATION_ERROR` |
+| 四項數值**有填寫時**為非負數字（0 允許、留空允許） | FR-032 | `VALIDATION_ERROR` |
+| 留空一律存為 `NULL`，**不得以 0 代替** | FR-032 | —（實作規則） |
 | 所屬店家存在 | FR-035 | `NOT_FOUND` |
 | 目標餐點存在 | FR-030 | `NOT_FOUND` |
 

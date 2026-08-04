@@ -331,31 +331,40 @@ components:
 
     MenuItemInput:
       type: object
-      required: [name, calories, protein_g, carbs_g, fat_g]
+      required: [name]
       description: |
         欄位名稱逐字沿用 shared-schema-store-menu.md，刻意**不加單位後綴**
         （即使第一輪的 meal_items 用的是 calories_kcal）——契約優先於
         內部命名一致性。
+
+        ★ 四個營養欄位皆為**選填且可為 null**（2026-08-04 定案，FR-032）：
+          null / 未提供該欄位 = 店家未提供此項數值
+          0                   = 該項確實為 0
+        兩者語意不同，伺服器**不得**以 0 代替 null 儲存——一旦以 0 寫入，
+        區別即永久喪失。四個欄位彼此獨立，不要求同時填寫。
       properties:
         name: { type: string, minLength: 1, maxLength: 255 }
         calories:
           type: number
           format: double
           minimum: 0
-          description: 允許為 0（零卡飲料，FR-032）。
-        protein_g: { type: number, format: double, minimum: 0 }
-        carbs_g: { type: number, format: double, minimum: 0 }
-        fat_g: { type: number, format: double, minimum: 0 }
+          nullable: true
+          description: null＝店家未提供；0＝確實為零卡。兩者不可互相代替。
+        protein_g: { type: number, format: double, minimum: 0, nullable: true }
+        carbs_g: { type: number, format: double, minimum: 0, nullable: true }
+        fat_g: { type: number, format: double, minimum: 0, nullable: true }
 
     MenuItemPatch:
       type: object
-      description: 部分更新；store_id 不可變更，故不在此。
+      description: |
+        部分更新；store_id 不可變更，故不在此。
+        明確傳入 null 代表「改為未提供」，與省略該欄位（維持原值）不同。
       properties:
         name: { type: string, minLength: 1, maxLength: 255 }
-        calories: { type: number, format: double, minimum: 0 }
-        protein_g: { type: number, format: double, minimum: 0 }
-        carbs_g: { type: number, format: double, minimum: 0 }
-        fat_g: { type: number, format: double, minimum: 0 }
+        calories: { type: number, format: double, minimum: 0, nullable: true }
+        protein_g: { type: number, format: double, minimum: 0, nullable: true }
+        carbs_g: { type: number, format: double, minimum: 0, nullable: true }
+        fat_g: { type: number, format: double, minimum: 0, nullable: true }
 
     MenuItem:
       type: object
@@ -365,10 +374,16 @@ components:
         id: { type: string, format: uuid }
         store_id: { type: string, format: uuid }
         name: { type: string }
-        calories: { type: number, format: double }
-        protein_g: { type: number, format: double }
-        carbs_g: { type: number, format: double }
-        fat_g: { type: number, format: double }
+        calories:
+          type: number
+          format: double
+          nullable: true
+          description: |
+            null 代表店家未提供此項數值，**不是 0**。前端呈現時必須區分
+            「未提供」與「0」，不得將 null 顯示為 0（FR-033）。
+        protein_g: { type: number, format: double, nullable: true }
+        carbs_g: { type: number, format: double, nullable: true }
+        fat_g: { type: number, format: double, nullable: true }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
