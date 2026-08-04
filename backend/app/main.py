@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api.v1 import analytics, auth, foods, meal_records, profile, recognitions
+from app.api.v1 import analytics, auth, foods, meal_records, profile, recognitions, stores
 from app.core.config import get_settings
 from app.core.deps import DbSession
 from app.core.errors import AppError, app_error_handler
@@ -60,6 +60,7 @@ v1.include_router(recognitions.router)
 v1.include_router(meal_records.router)
 v1.include_router(analytics.router)
 v1.include_router(foods.router)
+v1.include_router(stores.router)  # 第二輪：推薦餐廳（唯讀查詢）
 app.include_router(v1)
 
 

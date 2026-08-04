@@ -14,12 +14,18 @@
 > （OQ-4 結案）、座標確認為選填（OQ-2 部分結案）、`ON DELETE CASCADE` 確認（OQ-5 結案）、
 > 確認無軟刪除欄位、確認名稱不具唯一性、確認營養值 0 為有效數值。
 >
-> **契約檔案已於 2026-08-04 同步**（`menu_items` 的時間戳已加入）。契約檔案僅載明
-> 欄位名稱，其餘語意約定（座標選填、名稱不唯一、實刪除＋CASCADE、0 為有效數值）
-> 以交接說明為準，兩者一併構成本輪的資料層依據。
+> **2026-08-04 第三輪執行清單已給出最終定義，全部 Open Question 結案**：
+> 主鍵 UUID、營養欄位 nullable、`address` 為 **NOT NULL VARCHAR(500)**、
+> `name` 為 VARCHAR(255) 且不唯一、經緯度 nullable 且以 CHECK 保證成對、
+> `ON DELETE CASCADE`。下表已依此更新，**不再有待對齊項目**。
 >
-> 契約仍**未定義**主鍵型別與營養欄位的 nullability，下表中標示為 **[待對齊]**，
-> 對應 [research.md](./research.md) 的 OQ-1、OQ-2b。表格中的值是本輪的**建議值**，非既成決定。
+> **⚠️ 建表歸屬已定：由第三輪建立**。`stores` / `menu_items` 的 migration 與
+> model 由 `feature/round3-admin` 提供（他們負責寫入）。本輪已**刪除**自己的
+> migration，model 保留為合併前的可執行鏡像，合併時直接採用對方版本
+> ——詳見本文件末的「Migration 與 model 歸屬」。
+>
+> 本輪依賴的是 `from app.db.models import Store, MenuItem` 這個匯入介面，
+> 第三輪已保證其穩定，與檔案怎麼切無關。
 
 ## 資料表總覽
 
@@ -43,11 +49,11 @@ stores ──1:N── menu_items
 
 | 欄位 | 型別 | 約束 | 說明 |
 |---|---|---|---|
-| `id` | UUID **[待對齊 OQ-1]** | PK, default `gen_random_uuid()` | 與第一輪全專案的主鍵慣例一致 |
-| `name` | TEXT | NOT NULL | 店家名稱。**不具唯一性**——連鎖分店同名為正常資料，以 `address` 區分。測試資料以 `[測試]` 前綴標示（[research.md](./research.md) R-09） |
-| `address` | TEXT | NULL | 地址。**是分辨同名分店的唯一依據**，故清單必須顯示（FR-016）。僅供顯示，不參與距離計算，且系統不驗證其與座標是否一致 |
+| `id` | UUID | PK, default `gen_random_uuid()` | 與第一輪全專案的主鍵慣例一致 |
+| `name` | VARCHAR(255) | NOT NULL | 店家名稱。**不具唯一性**——連鎖分店同名為正常資料，以 `address` 區分。測試資料以 `[測試]` 前綴標示（[research.md](./research.md) R-09） |
+| `address` | VARCHAR(500) | **NOT NULL** | 地址。**是分辨同名分店的唯一依據**，故清單必須顯示（FR-016）。僅供顯示，不參與距離計算，且系統不驗證其與座標是否一致 |
 | `latitude` | NUMERIC(9,6) | **NULL** | 緯度。**選填**——後台允許只建「名稱＋地址」、暫不填座標的店家，故 NULL 是常態而非異常 |
-| `longitude` | NUMERIC(9,6) | **NULL** | 經度。寫入端保證與 `latitude` 同時有值或同時為 NULL |
+| `longitude` | NUMERIC(9,6) | **NULL** | 經度。以 CHECK `(latitude IS NULL) = (longitude IS NULL)` 於 DB 層保證與 `latitude` 成對 |
 | `created_at` | TIMESTAMPTZ | NOT NULL, default `now()` | |
 | `updated_at` | TIMESTAMPTZ | NOT NULL, default `now()` | |
 
@@ -57,7 +63,7 @@ stores ──1:N── menu_items
 
 **驗證規則**
 
-- 緯度與經度**同時有值或同時為 NULL**，由**寫入端（第三輪）保證**，不會出現只有其一的資料。本輪讀取端仍保留防禦性檢查（`lat is None or lng is None` 即視為無座標），成本為零且不需為此設計使用者可見的錯誤情境。
+- 緯度與經度**同時有值或同時為 NULL**，由 DB 層 CHECK 約束 `(latitude IS NULL) = (longitude IS NULL)` 保證，寫入端另行擋下。本輪讀取端仍保留防禦性檢查（`lat is None or lng is None` 即視為無座標），成本為零且不需為此設計使用者可見的錯誤情境。
 - 無座標的店家：**排除**於距離排序結果之外（沒有距離可算，補在末端會讓使用者要求「附近」時混入與距離無關的店家），但在不排序的全部店家清單中**正常出現**（FR-018）。此為雙方明確議定的行為。
 - **不得以 `name` 作為識別或查詢鍵**（FR-016a）。店名不唯一，清單的 React key、路由參數與所有查詢一律使用 `id`。
 - 本輪**不提供**任何建立、修改、刪除 `stores` 的 API（FR-029）。
@@ -72,17 +78,17 @@ stores ──1:N── menu_items
 
 | 欄位 | 型別 | 約束 | 說明 |
 |---|---|---|---|
-| `id` | UUID **[待對齊 OQ-1]** | PK, default `gen_random_uuid()` | |
-| `store_id` | UUID | NOT NULL, FK → `stores.id` **ON DELETE CASCADE** | 刪除店家連帶刪除其全部餐點，不留孤兒資料（2026-08-04 交接確認） |
-| `name` | TEXT | NOT NULL | 餐點名稱。**不具唯一性**——同店家內允許同名餐點，各自獨立 |
-| `calories` | NUMERIC(7,2) | **NULL [待對齊 OQ-2b]**, CHECK `>= 0` | 熱量（大卡），**每份餐點**的數值 |
-| `protein_g` | NUMERIC(6,2) | **NULL [待對齊 OQ-2b]**, CHECK `>= 0` | 蛋白質（公克） |
-| `carbs_g` | NUMERIC(6,2) | **NULL [待對齊 OQ-2b]**, CHECK `>= 0` | 碳水化合物（公克） |
-| `fat_g` | NUMERIC(6,2) | **NULL [待對齊 OQ-2b]**, CHECK `>= 0` | 脂肪（公克） |
+| `id` | UUID | PK, default `gen_random_uuid()` | |
+| `store_id` | UUID | NOT NULL, FK → `stores.id` **ON DELETE CASCADE** | 刪除店家連帶刪除其全部餐點，不留孤兒資料 |
+| `name` | VARCHAR(255) | NOT NULL | 餐點名稱。**不具唯一性**——同店家內允許同名餐點，各自獨立 |
+| `calories` | NUMERIC(7,2) | **NULL**, CHECK `>= 0` | 熱量（大卡），**每份餐點**的數值 |
+| `protein_g` | NUMERIC(6,2) | **NULL**, CHECK `>= 0` | 蛋白質（公克） |
+| `carbs_g` | NUMERIC(6,2) | **NULL**, CHECK `>= 0` | 碳水化合物（公克） |
+| `fat_g` | NUMERIC(6,2) | **NULL**, CHECK `>= 0` | 脂肪（公克） |
 | `created_at` | TIMESTAMPTZ | NOT NULL, default `now()` | 2026-08-04 交接新增，與 `stores` 一致。由寫入端自動填入 |
 | `updated_at` | TIMESTAMPTZ | NOT NULL, default `now()` | 同上。本輪不讀取、不對外呈現 |
 
-**索引**：`INDEX (store_id)` — 唯一的查詢路徑是「取某店家的全部餐點」。
+**索引**：`ix_menu_items_store (store_id)` — 唯一的查詢路徑是「取某店家的全部餐點」。
 
 **驗證規則**
 
@@ -90,7 +96,7 @@ stores ──1:N── menu_items
   - `0` → 店家登錄該營養素為零 → 畫面顯示 **`0`**
   - `NULL` → 店家未提供 → 畫面顯示 **「無資料」**
 
-  這是 FR-025 的前提。若以 NOT NULL + 預設 0 建表，「未填寫」與「確實為 0」的區別在寫入當下即永久喪失（[research.md](./research.md) R-08）。**交接說明確認了 0 必須顯示為 0，但未言明 NULL 是否允許寫入**——故 nullability 仍列為 OQ-2b。
+  這是 FR-025 的前提。若以 NOT NULL + 預設 0 建表，「未填寫」與「確實為 0」的區別在寫入當下即永久喪失（[research.md](./research.md) R-08）。**已於 2026-08-04 第三輪執行清單確認為 nullable，且對方有測試專門斷言「NULL 營養值不會被寫成 0」**。
 - 營養值不接受負數（CHECK `>= 0`）。
 - **不得以 `name` 識別餐點**，同店家內可能有同名餐點；不同店家的同名餐點數值互不連動（FR-031）。
 - 本輪**不提供**任何建立、修改、刪除 `menu_items` 的 API（FR-029）。
@@ -143,22 +149,25 @@ stores ──1:N── menu_items
 
 ---
 
-## Migration
+## Migration 與 model 歸屬
 
-**檔名**：`backend/alembic/versions/20260804_0002_store_menu.py`
-**revision**：`0002`　**down_revision**：`0001`
+**兩張表的 DDL 由第三輪（`feature/round3-admin`）提供**——他們負責寫入，本輪只讀，
+由寫入方持有 schema 定義是正確的歸屬。依 2026-08-04 第三輪執行清單：
 
-`upgrade()` 只做兩件事：`create_table("stores")`、`create_table("menu_items")`。
-`downgrade()` 反序 `drop_table`。
+| 項目 | 歸屬 | 本輪的處置 |
+|---|---|---|
+| `alembic/versions/20260804_0002_stores_menu_items.py`（revision `0002`） | 第三輪 | 本輪原有的 `20260804_0002_store_menu.py` **已刪除**——兩支同為 `0002` 且同以 `0001` 為 parent，合併後必然雙 head 且重複建表 |
+| `app/db/models/store.py`（`Store`） | 第三輪 | 本輪保留同名同結構的鏡像，**合併時採用對方版本** |
+| `app/db/models/menu_item.py`（`MenuItem`） | 第三輪 | 同上 |
 
-> **⚠️ 建表歸屬已於 2026-08-04 交接中議定**：兩張表在 `main` 與兩個 feature 分支上
-> 皆尚不存在，**由先合併回 `main` 的一方建立，另一方沿用**，誰先建立需於合併前互相知會。
->
-> 因此本輪的 migration `0002` 是**有條件的**：
->
-> - 若本輪先合併 → `0002` 成立，第三輪沿用本輪的結構定義。
-> - 若第三輪先合併 → **捨棄本輪的 `0002`**，改以第三輪已建立的結構為準，本輪只需
->   確認 SQLAlchemy model 與其一致（欄位名、型別、nullability）。
->
-> 兩邊都建立 migration 而未協調，會使兩個 revision 同時以 `0001` 為 parent，
-> 合併後 Alembic 出現雙 head 且嘗試重複建表。詳見 [plan.md](./plan.md) 的合併風險章節。
+**本輪為何仍保留 model 檔案**：若直接刪除，第二輪分支在合併前將無法執行任何測試、
+seed 或本機驗證（136 支後端測試全數失敗）。故保留為**可執行的鏡像**，欄位逐項比照
+第三輪的最終定義，合併時直接覆蓋即可，本輪的查詢程式碼一行都不用改。
+
+**本輪依賴的介面**：`from app.db.models import Store, MenuItem`。第三輪已保證此匯入
+路徑穩定，與檔案怎麼切無關——因此 `services/stores.py`、`api/v1/stores.py`、
+`scripts/seed_stores.py` 與全部測試都不受對方的檔案組織方式影響。
+
+**合併前建表（本機開發）**：本輪已無 migration，測試由 `conftest.py` 的
+`Base.metadata.create_all()` 建表，不受影響；若要跑 `seed_stores.py`，需先以
+`create_all()` 或第三輪的 migration 建表。

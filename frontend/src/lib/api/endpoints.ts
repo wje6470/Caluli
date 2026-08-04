@@ -7,11 +7,14 @@ import type {
   HealthProfileInput,
   MealRecord,
   MealRecordInput,
+  MenuItemListResponse,
   MeResponse,
   MetricKey,
   Recognition,
   SessionResponse,
   FoodReference,
+  Store,
+  StoreListResponse,
   TrendResponse,
 } from './types'
 
@@ -63,4 +66,30 @@ export const analyticsApi = {
 export const foodApi = {
   search: (q: string) =>
     api.get<{ foods: FoodReference[] }>(`/foods/search?q=${encodeURIComponent(q)}`),
+}
+
+/**
+ * 推薦餐廳（第二輪）。全部為唯讀查詢——新增／修改／刪除屬第三輪管理員後台，
+ * 本輪不提供也不預留（FR-029）。
+ */
+export const storeApi = {
+  /**
+   * 店家清單。
+   *
+   * 帶座標 → 附近模式（5 公里內、依距離排序、最多 10 家）。
+   * 不帶座標 → 全部模式（依名稱排序、無距離），供定位被拒／失敗，
+   * 以及「附近查無店家」時的「改看全部店家」使用。
+   *
+   * ⚠️ 座標必須成對傳送。只傳其一後端會回 422（而非無聲退回全部模式），
+   * 避免前端誤以為使用者位置已納入計算。
+   */
+  list: (coords?: { lat: number; lng: number }) =>
+    api.get<StoreListResponse>(
+      coords ? `/stores?lat=${coords.lat}&lng=${coords.lng}` : '/stores'
+    ),
+
+  get: (storeId: string) => api.get<Store>(`/stores/${storeId}`),
+
+  menuItems: (storeId: string) =>
+    api.get<MenuItemListResponse>(`/stores/${storeId}/menu-items`),
 }

@@ -66,6 +66,17 @@ class Settings(BaseSettings):
         "image/webp",
     )
 
+    # --- 推薦餐廳（第二輪）---
+    #
+    # 兩個值集中於此而非散落在服務層：半徑是暫定值（OQ-7），實地測試後
+    # 很可能調整，散落多處會漏改。
+    #
+    #: 「附近」的距離上限（公里）。超過此距離的店家不出現在距離排序清單中，
+    #: 即使範圍內不足 nearby_limit 家也不以範圍外的店家補足（spec FR-020）。
+    nearby_radius_km: float = 5.0
+    #: 距離排序清單的回傳筆數上限（spec FR-014）。
+    nearby_limit: int = 10
+
     # --- 其他 ---
     #: 部署於 Vercel 等 serverless 平台時設為 true。
     #: 影響資料庫連線策略（見 db/session.py）——serverless 下必須關閉

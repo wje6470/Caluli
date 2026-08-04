@@ -162,7 +162,7 @@
 
 **資料範圍與資料模型隔離**
 
-- **FR-028**: 店家與餐點資料表的欄位 MUST 完全依照共用契約（[reference/shared-schema-store-menu.md](../../reference/shared-schema-store-menu.md)，2026-08-04 第三輪交接更新）建立：`stores`（id、name、address、latitude、longitude、created_at、updated_at）與 `menu_items`（id、store_id、name、calories、protein_g、carbs_g、fat_g、created_at、updated_at）。本輪 MUST NOT 自行增減欄位或修改欄位名稱。`menu_items` 的時間戳由第三輪寫入端自動填寫，本輪不讀取亦不對外呈現。
+- **FR-028**: 店家與餐點資料表的欄位 MUST 完全依照共用契約（[reference/shared-schema-store-menu.md](../../reference/shared-schema-store-menu.md)，2026-08-04 第三輪交接更新）：`stores`（id、name、address、latitude、longitude、created_at、updated_at）與 `menu_items`（id、store_id、name、calories、protein_g、carbs_g、fat_g、created_at、updated_at）。本輪 MUST NOT 自行增減欄位或修改欄位名稱。資料表的 DDL 由第三輪建立，本輪 MUST NOT 提供建表 migration。`menu_items` 的時間戳由第三輪寫入端自動填寫，本輪不讀取亦不對外呈現。
 - **FR-029**: 本輪 MUST 僅提供店家與餐點的唯讀查詢能力；MUST NOT 提供新增、修改或刪除店家／餐點的介面或寫入端點（屬第三輪管理員後台範圍）。
 - **FR-030**: 店家餐點營養資料 MUST 為與第一輪通用食物營養對照表完全獨立的資料集；系統 MUST NOT 在兩者間建立關聯、共用資料表或以任一方的數值替代另一方。
 - **FR-031**: 即使某餐點名稱與通用食物營養對照表中的食物名稱相同，系統 MUST 一律採用該店家登錄的營養數值，MUST NOT 查詢或連動通用食物營養對照表。
@@ -222,8 +222,9 @@
 
 **資料與範圍**
 
-- 店家／餐點資料表在 `main` 與兩個 feature 分支上皆尚不存在。依 2026-08-04 第三輪交接說明，**由先合併回 `main` 的一方建立，另一方沿用**，兩邊不各自產生不相容的結構定義；誰先建立需於合併前互相知會。
-- 座標為選填欄位，且寫入端保證緯度與經度「同時有值或同時為 NULL」，不會出現只有其一的資料。本輪的讀取端仍保留防禦性檢查（成本為零），但不需為此設計使用者可見的錯誤情境。
+- 店家／餐點資料表的 DDL 與 model **由第三輪（管理員後台）建立**——他們負責寫入，本輪只讀，由寫入方持有 schema 是正確的歸屬。本輪已刪除自己的 migration，並保留與其相同組織方式的 model 鏡像供合併前的本機驗證使用。本輪依賴的介面是 `from app.db.models import Store, MenuItem`，第三輪已保證其穩定。
+- 座標為選填欄位，且以資料庫 CHECK 約束保證緯度與經度「同時有值或同時為 NULL」，不會出現只有其一的資料。本輪的讀取端仍保留防禦性檢查（成本為零），但不需為此設計使用者可見的錯誤情境。
+- 地址為必填欄位（NOT NULL）。本輪的讀取端型別仍維持可空以保持寬容——行為不變且成本為零，見 [research.md](./research.md) 的說明。
 - 餐點營養欄位可能為 0（店家登錄該營養素為零），此為有效數值而非缺值。
 - 本輪不提供店家搜尋、名稱篩選、營業時間、店家照片、評分或分類標籤等欄位與功能——共用契約未定義這些欄位，本輪不得自行增補。
 - 本輪不提供「將店家餐點一鍵記入飲食紀錄」的功能。餐點瀏覽為唯讀資訊呈現，與第一輪的拍照記帳流程不互相串接。

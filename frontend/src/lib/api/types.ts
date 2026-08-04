@@ -168,3 +168,63 @@ export interface TrendResponse {
   average: number
   target_achievement_rate: number
 }
+
+// ---------------------------------------------------------------------------
+// 推薦餐廳（第二輪）
+// ---------------------------------------------------------------------------
+
+export interface Store {
+  id: string
+  /**
+   * 店家名稱。**不具唯一性**——連鎖分店同名為正常資料。
+   * 不得作為識別鍵、React key 或去重依據，一律使用 `id`（FR-016a）。
+   */
+  name: string
+  /** 分辨同名分店的唯一依據，清單必須顯示（FR-016）。 */
+  address: string | null
+  latitude: number | null
+  longitude: number | null
+  /**
+   * 與使用者當次座標的直線距離（公尺）。
+   * `null` 代表**未計算**（全部模式），不代表距離為 0。
+   */
+  distance_m: number | null
+}
+
+export interface StoreListResponse {
+  /** 由是否提供座標決定，非客戶端指定。 */
+  mode: 'nearby' | 'all'
+  radius_km: number | null
+  /**
+   * 資料庫中的店家總數，不受半徑、筆數上限或座標有效性影響。
+   *
+   * 用來區分兩種語意完全不同的空狀態（research.md R-05）：
+   *   stores 空 + total > 0  → 「附近查無店家」，提供「改看全部店家」
+   *   stores 空 + total == 0 → 「目前尚無店家資料」，不提供改看操作
+   */
+  total_store_count: number
+  stores: Store[]
+}
+
+export interface MenuItem {
+  id: string
+  store_id: string
+  name: string
+  /**
+   * 以下四個欄位的 `null` 與 `0` 是**兩種不同的有效狀態**（FR-025）：
+   *   null → 店家未提供 → 顯示「無資料」
+   *   0    → 店家登錄為零 → 顯示 0
+   *
+   * ⚠️ 型別**必須**是 `number | null`。寫成 `number` 會讓「無資料」分支
+   * 在型別上看起來不可能發生，而它其實是常態。
+   */
+  calories_kcal: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+}
+
+export interface MenuItemListResponse {
+  /** 空陣列代表該店尚未登錄餐點，屬正常結果而非錯誤（FR-024）。 */
+  menu_items: MenuItem[]
+}

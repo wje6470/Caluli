@@ -207,25 +207,28 @@ NEARBY_LIMIT = 10        # spec FR-014
 
 ## Open Questions
 
-2026-08-04 第三輪交接說明已結案四項（OQ-3、OQ-4、OQ-5，以及 OQ-2 的座標部分）。**仍未定案的是主鍵型別與營養欄位 nullability**——兩者在建表時都無法迴避，且都無法在合併後靠改欄位名補救。
+**2026-08-04 第三輪執行清單給出了最終欄位定義，跨分支的 Open Question 全數結案。** 僅餘兩項與第三輪無關的本輪自身待辦。
 
-### 未定案
+### 已結案
 
-| ID | 問題 | 本輪採用的建議值 | 需在何時與誰確認 |
+| ID | 原問題 | 最終結論（第三輪定義） | 對本輪的影響 |
 |---|---|---|---|
-| **OQ-1** | **`stores.id` / `menu_items.id` 的型別**。第一輪全專案採 UUID（`gen_random_uuid()`）；若第三輪採 `BIGSERIAL`，型別衝突無法自動解決，需一方重建資料表。**交接說明未提及此項** | UUID，與第一輪一致 | **建表前**，與第三輪開發者 |
-| **OQ-2b** | **四個營養欄位是否允許 NULL**。交接說明確認了「0 顯示為 0」，但未言明 NULL 是否可寫入。若設 NOT NULL，FR-025 的「無資料」狀態將永不出現 | **nullable**（R-08） | **建表前**，與第三輪開發者 |
-| OQ-6 | 由哪一方建立資料表與 migration | 依交接說明「先合併回 main 的一方建立」；本輪備妥 `0002`（parent `0001`），若第三輪先合併則捨棄 | **合併回 main 前，互相知會** |
+| ~~OQ-1~~ | 主鍵型別（UUID vs BIGSERIAL） | **UUID**，default `gen_random_uuid()` | 與本輪建議一致，無需修改 |
+| ~~OQ-2b~~ | 四個營養欄位是否允許 NULL | **NULL**，CHECK `>= 0`；對方有測試斷言「NULL 不會被寫成 0」 | 與本輪建議一致。FR-025 的「無資料」分支確定會實際發生，非死碼 |
+| ~~OQ-2（座標）~~ | 經緯度是否 nullable | **NULL**，並以 CHECK `(latitude IS NULL) = (longitude IS NULL)` 於 DB 層保證成對 | 保證比預期更強（原本只靠寫入端）。防禦性檢查仍保留 |
+| ~~OQ-3~~ | `name`／`address` 的型別與 nullability | `name` VARCHAR(255) NOT NULL 且**不唯一**；`address` VARCHAR(500) **NOT NULL** | ⚠️ `address` 由原先假設的 nullable 改為 **NOT NULL**，見下方註記 |
+| ~~OQ-4~~ | `menu_items` 缺時間戳 | **補上** `created_at`／`updated_at` | 僅 model 增列，本輪不讀取、不對外呈現。API 契約不變 |
+| ~~OQ-5~~ | 店家刪除時餐點的行為 | **實刪除 + `ON DELETE CASCADE`**；無 `deleted_at`／`is_active` | 查詢**不得**加任何軟刪除過濾（FR-018a） |
+| ~~OQ-6~~ | 由哪一方建表 | **第三輪建立**（他們負責寫入）。本輪已刪除自己的 migration | 見 [data-model.md](./data-model.md)「Migration 與 model 歸屬」 |
+
+**`address` 改為 NOT NULL 的影響**：本輪的讀取端型別（`StoreOut.address: str | None`、
+前端 `address: string | null`）**刻意維持可空**。理由是本輪不再擁有這張表的 schema，
+保持寬容的讀取型別成本為零、行為不變（前端已有 `?? '地址未提供'` 的退路），
+而一旦對方日後放寬約束也不需要跟著改。FR-016「地址必須顯示」因 NOT NULL 而更有保障。
+
+### 本輪自身待辦（與第三輪無關）
+
+| ID | 問題 | 現行值 | 需在何時決定 |
+|---|---|---|---|
 | OQ-7 | 5 公里半徑是否符合實際使用情境 | 5.0 km（使用者已於 specify 階段決定） | 實地測試後 |
 | OQ-8 | 地址→座標的自動地理編碼 | 不做，座標由第三輪後台人工輸入（brief 明訂） | 第三輪或之後 |
-
-### 已結案（2026-08-04 第三輪交接）
-
-| ID | 原問題 | 結論 | 對本輪的影響 |
-|---|---|---|---|
-| ~~OQ-2（座標部分）~~ | 經緯度是否 nullable | **選填，可為 NULL**；寫入端保證兩者同時有值或同時為 NULL | 無需修改設計——R-01／R-04 原本就排除 NULL 座標。防禦性檢查保留 |
-| ~~OQ-3~~ | `name`／`address` 是否 NOT NULL | `name` NOT NULL 且**不唯一**；`address` 為分辨同名分店的依據 | ⚠️ 影響 R-09 的 uuid5 推導鍵，已修正；新增 FR-016a（以 id 識別） |
-| ~~OQ-4~~ | `menu_items` 缺時間戳 | **補上** `created_at`／`updated_at`，與 `stores` 一致 | 僅 migration 與 model 增列，本輪不讀取、不對外呈現。API 契約不變 |
-| ~~OQ-5~~ | 店家刪除時餐點的行為 | **實刪除 + `ON DELETE CASCADE`**；無 `deleted_at`／`is_active` | 查詢**不得**加任何軟刪除過濾（FR-018a）。FR-027「店家已不存在」的情境變得更實際 |
-
-**OQ-1 仍是風險最高的一項**，且因交接說明議定「由先合併的一方建表」而更加緊急——先建表的一方等於為雙方定案主鍵型別。建議在任一方建表前先取得共識。
