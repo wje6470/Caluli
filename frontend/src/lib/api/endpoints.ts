@@ -3,6 +3,8 @@
 import { api } from './client'
 import type {
   AdminSession,
+  MenuItem,
+  MenuItemInput,
   Store,
   StoreInput,
   StoreWithCount,
@@ -91,5 +93,19 @@ export const adminApi = {
       api.patch<Store>(`/admin/stores/${id}`, input),
     /** 連帶刪除該店家底下的所有餐點——呼叫前務必二次確認（FR-038）。 */
     remove: (id: string) => api.delete<void>(`/admin/stores/${id}`),
+
+    /** 取得單一店家。餐點頁需要它來顯示店名。 */
+    get: (id: string) => api.get<Store>(`/admin/stores/${id}`),
+  },
+
+  menuItems: {
+    list: (storeId: string) =>
+      api.get<{ menu_items: MenuItem[] }>(`/admin/stores/${storeId}/menu-items`),
+    create: (storeId: string, input: MenuItemInput) =>
+      api.post<MenuItem>(`/admin/stores/${storeId}/menu-items`, input),
+    /** 以餐點自身 id 定位——餐點的所屬店家不可變更。 */
+    update: (id: string, input: Partial<MenuItemInput>) =>
+      api.patch<MenuItem>(`/admin/menu-items/${id}`, input),
+    remove: (id: string) => api.delete<void>(`/admin/menu-items/${id}`),
   },
 }

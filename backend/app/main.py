@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.api.v1 import (
+    admin_menu_items,
     admin_session,
     admin_stores,
     analytics,
@@ -77,6 +78,7 @@ v1.include_router(foods.router)
 # admin_menu_items 於此處加入。
 v1.include_router(admin_session.router)
 v1.include_router(admin_stores.router)
+v1.include_router(admin_menu_items.router)
 
 app.include_router(v1)
 

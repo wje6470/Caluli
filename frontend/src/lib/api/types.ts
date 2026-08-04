@@ -213,3 +213,35 @@ export interface StoreInput {
   latitude: number | null
   longitude: number | null
 }
+
+/**
+ * 店家菜單上的餐點。
+ *
+ * ⚠️ 營養欄位為 `string | null`，兩層意義都要注意：
+ *   - string 而非 number：同上，Decimal 序列化為字串
+ *   - **null ≠ 0**：null 代表店家未提供，0 代表確實為零。
+ *     呈現時必須區分，不得把 null 顯示成 0（FR-033）。
+ */
+export interface MenuItem {
+  id: string
+  store_id: string
+  name: string
+  calories: string | null
+  protein_g: string | null
+  carbs_g: string | null
+  fat_g: string | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * 送出餐點。四個營養欄位彼此獨立，皆可為 null（＝未提供）。
+ * 送 0 與送 null 是不同的意思，表單不得把空欄位轉成 0。
+ */
+export interface MenuItemInput {
+  name: string
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+}

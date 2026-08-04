@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.db.models import MenuItem, Store
-from app.schemas.admin import StoreInput, StorePatch
+from app.schemas.admin import MenuItemInput, MenuItemPatch, StoreInput, StorePatch
 
 
 def _get_or_404(db: Session, store_id: uuid.UUID) -> Store:
@@ -116,4 +116,89 @@ def delete_store(db: Session, store_id: uuid.UUID) -> None:
     """
     store = _get_or_404(db, store_id)
     db.delete(store)
+    db.flush()
+
+
+# ─── 餐點 ────────────────────────────────────────────────────────────
+
+#: 可由客戶端寫入的營養欄位。集中一處，避免各函式各寫一份而漏掉某欄。
+NUTRITION_FIELDS = ("calories", "protein_g", "carbs_g", "fat_g")
+
+
+def _get_menu_item_or_404(db: Session, menu_item_id: uuid.UUID) -> MenuItem:
+    item = db.get(MenuItem, menu_item_id)
+    if item is None:
+        raise AppError("NOT_FOUND")
+    return item
+
+
+def list_menu_items(db: Session, store_id: uuid.UUID) -> list[MenuItem]:
+    """列出某店家的餐點。
+
+    先確認店家存在，讓「店家不存在」與「店家存在但沒有餐點」得到不同的
+    回應——前者是 404，後者是空清單加空狀態畫面（FR-036）。若省略這步，
+    兩者都會回空清單，管理員無從分辨。
+
+    查詢一律以 store_id 收斂，不存在「查全部再過濾」的路徑（FR-033）。
+    """
+    _get_or_404(db, store_id)
+    statement = select(MenuItem).where(MenuItem.store_id == store_id).order_by(MenuItem.created_at)
+    return list(db.scalars(statement).all())
+
+
+def create_menu_item(db: Session, store_id: uuid.UUID, payload: MenuItemInput) -> MenuItem:
+    """在指定店家底下新增餐點。
+
+    店家不存在時在此擋下（FR-035）——若放任寫入，外鍵會擋，但錯誤訊息
+    是資料庫層的 IntegrityError，對管理員毫無意義。
+
+    ⚠️ 未提供的營養欄位寫入 None 而非 0：以 0 代替會讓「店家未提供」與
+       「確實為 0」的區別在寫入當下永久喪失（FR-032）。
+    """
+    _get_or_404(db, store_id)
+
+    item = MenuItem(
+        store_id=store_id,
+        name=payload.name.strip(),
+        **{field: getattr(payload, field) for field in NUTRITION_FIELDS},
+    )
+    db.add(item)
+    db.flush()
+    db.refresh(item)
+    return item
+
+
+def update_menu_item(db: Session, menu_item_id: uuid.UUID, payload: MenuItemPatch) -> MenuItem:
+    """部分更新餐點。
+
+    ★ 以 model_fields_set 判斷欄位是否被提供，而非以值是否為 None
+    ================================================================
+        未提供該欄位   → 維持原值
+        明確傳入 null  → 改為「未提供」（例如發現先前登錄有誤）
+
+    兩者在 pydantic 中的值都是 None，用 `if payload.calories is not None`
+    判斷會讓「清除數值」變成不可能的操作。
+
+    所屬店家不可變更——契約沒有「把餐點移到別家店」的語意，故 store_id
+    不在可更新欄位內。
+    """
+    item = _get_menu_item_or_404(db, menu_item_id)
+    provided = payload.model_fields_set
+
+    if "name" in provided and payload.name is not None:
+        item.name = payload.name.strip()
+
+    for field in NUTRITION_FIELDS:
+        if field in provided:
+            setattr(item, field, getattr(payload, field))
+
+    db.flush()
+    db.refresh(item)
+    return item
+
+
+def delete_menu_item(db: Session, menu_item_id: uuid.UUID) -> None:
+    """刪除單一餐點。店家本身與其餘餐點不受影響（FR-030）。"""
+    item = _get_menu_item_or_404(db, menu_item_id)
+    db.delete(item)
     db.flush()

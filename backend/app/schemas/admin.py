@@ -104,3 +104,74 @@ class StoreWithCountOut(StoreOut):
 
 class StoreListOut(BaseModel):
     stores: list[StoreWithCountOut]
+
+
+# ─── 餐點 ────────────────────────────────────────────────────────────
+#
+# 欄位名稱逐字沿用共用契約（calories、protein_g…），**不加單位後綴**，
+# 即使第一輪的 meal_items 用的是 calories_kcal——契約優先於內部命名一致性。
+#
+# 四個營養欄位皆選填：
+#     未提供 / null = 店家未提供此項數值
+#     0             = 該項確實為零
+# 兩者語意不同，服務層不得以 0 代替 null 寫入（FR-032）。
+
+
+def _nutrition(description: str) -> object:
+    return Field(default=None, ge=0, description=f"{description}；null 代表店家未提供，與 0 不同")
+
+
+class MenuItemInput(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    calories: Decimal | None = _nutrition("熱量（大卡）")
+    protein_g: Decimal | None = _nutrition("蛋白質（公克）")
+    carbs_g: Decimal | None = _nutrition("碳水化合物（公克）")
+    fat_g: Decimal | None = _nutrition("脂肪（公克）")
+
+    @model_validator(mode="after")
+    def _validate(self) -> "MenuItemInput":
+        if not self.name.strip():
+            raise ValueError("餐點名稱不得為空白。")
+        return self
+
+
+class MenuItemPatch(BaseModel):
+    """部分更新。
+
+    ⚠️ 「未提供該欄位」與「明確傳入 null」是兩件不同的事：
+        未提供      → 維持原值
+        明確傳 null → 改為「未提供」
+    兩者在 pydantic 中都是 None，故服務層必須以 `model_fields_set` 區分，
+    不能以值是否為 None 判斷。
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    calories: Decimal | None = _nutrition("熱量（大卡）")
+    protein_g: Decimal | None = _nutrition("蛋白質（公克）")
+    carbs_g: Decimal | None = _nutrition("碳水化合物（公克）")
+    fat_g: Decimal | None = _nutrition("脂肪（公克）")
+
+    @model_validator(mode="after")
+    def _validate(self) -> "MenuItemPatch":
+        if self.name is not None and not self.name.strip():
+            raise ValueError("餐點名稱不得為空白。")
+        return self
+
+
+class MenuItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    store_id: uuid.UUID
+    name: str
+    #: null = 店家未提供，**不是 0**。呈現時必須區分（FR-033）。
+    calories: Decimal | None
+    protein_g: Decimal | None
+    carbs_g: Decimal | None
+    fat_g: Decimal | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class MenuItemListOut(BaseModel):
+    menu_items: list[MenuItemOut]

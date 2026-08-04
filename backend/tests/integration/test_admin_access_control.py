@@ -53,6 +53,11 @@ ADMIN_ENDPOINTS: list[tuple[str, str]] = [
     ("GET", "/api/v1/admin/stores/{id}"),
     ("PATCH", "/api/v1/admin/stores/{id}"),
     ("DELETE", "/api/v1/admin/stores/{id}"),
+    # US3 餐點維護
+    ("GET", "/api/v1/admin/stores/{id}/menu-items"),
+    ("POST", "/api/v1/admin/stores/{id}/menu-items"),
+    ("PATCH", "/api/v1/admin/menu-items/{id}"),
+    ("DELETE", "/api/v1/admin/menu-items/{id}"),
 ]
 
 GENERAL_SUB = "U11111111111111111111111111111111"

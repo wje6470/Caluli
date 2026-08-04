@@ -319,3 +319,273 @@ async def test_deleting_store_cascades_to_its_menu_items(client, auth, db_sessio
     # 其他店家的餐點完好。
     assert db_session.query(MenuItem).filter(MenuItem.store_id == bystander_id).count() == 1
     assert db_session.query(Store).count() == 1
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 餐點維護（tasks.md T027，spec US3）
+#
+# 最關鍵的兩項是「留空 ≠ 0」與「跨店家不連動」：
+#   - 留空必須存成 NULL，不得以 0 代替。以 0 寫入會讓「店家未提供」與
+#     「確實為 0」的區別在寫入當下永久喪失，無法事後還原。
+#   - 不同店家的同名餐點各自獨立（憲章原則 V）。
+# ═══════════════════════════════════════════════════════════════════
+
+
+def _menu_item(db_session: Session, store: Store, **overrides) -> MenuItem:
+    payload = {"store_id": store.id, "name": "招牌餐點", "calories": 500} | overrides
+    item = MenuItem(**payload)
+    db_session.add(item)
+    db_session.flush()
+    db_session.refresh(item)
+    return item
+
+
+async def test_create_menu_item_with_full_nutrition(client, auth, db_session):
+    store = _store(db_session)
+
+    async with client as ac:
+        response = await ac.post(
+            f"/api/v1/admin/stores/{store.id}/menu-items",
+            headers=auth,
+            json={
+                "name": "滷肉飯",
+                "calories": 620,
+                "protein_g": 18.5,
+                "carbs_g": 88,
+                "fat_g": 21.2,
+            },
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["name"] == "滷肉飯"
+    assert body["store_id"] == str(store.id)
+    assert float(body["calories"]) == pytest.approx(620)
+
+
+async def test_create_menu_item_with_only_name(client, auth, db_session):
+    """FR-032：四個營養欄位皆選填，且彼此獨立（不比照座標的成對規則）。"""
+    store = _store(db_session)
+
+    async with client as ac:
+        response = await ac.post(
+            f"/api/v1/admin/stores/{store.id}/menu-items",
+            headers=auth,
+            json={"name": "尚未提供營養資訊的餐點"},
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["calories"] is None
+    assert body["protein_g"] is None
+    assert body["carbs_g"] is None
+    assert body["fat_g"] is None
+
+
+async def test_blank_nutrition_is_stored_as_null_not_zero(client, auth, db_session):
+    """★ FR-032 的不可逆性保護：留空必須存成 NULL，不得以 0 代替。
+
+    若實作把未填欄位補成 0，「店家未提供」與「確實為 0」就永遠分不出來，
+    而且分不出來這件事在寫入當下就發生、事後無法還原。
+    """
+    store = _store(db_session)
+
+    async with client as ac:
+        response = await ac.post(
+            f"/api/v1/admin/stores/{store.id}/menu-items",
+            headers=auth,
+            json={"name": "只知道熱量", "calories": 500},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["protein_g"] is None, "留空被寫成了 0——語意已永久喪失"
+
+    item = db_session.query(MenuItem).filter(MenuItem.name == "只知道熱量").one()
+    assert item.protein_g is None
+    assert item.calories is not None
+
+
+async def test_zero_and_null_are_distinguishable(client, auth, db_session):
+    """0 與 NULL 必須是兩種可區分的狀態（FR-032、FR-033）。"""
+    store = _store(db_session)
+
+    async with client as ac:
+        zero = await ac.post(
+            f"/api/v1/admin/stores/{store.id}/menu-items",
+            headers=auth,
+            json={"name": "零卡氣泡水", "calories": 0, "fat_g": 0},
+        )
+
+    assert zero.status_code == 201
+    body = zero.json()
+    # 0 要如實存為 0，不得被當成「沒填」而轉成 null。
+    assert body["calories"] is not None
+    assert float(body["calories"]) == 0
+    assert float(body["fat_g"]) == 0
+    # 沒送的欄位仍是 null。
+    assert body["protein_g"] is None
+
+
+@pytest.mark.parametrize("field", ["calories", "protein_g", "carbs_g", "fat_g"])
+async def test_negative_nutrition_is_rejected(client, auth, db_session, field):
+    store = _store(db_session)
+
+    async with client as ac:
+        response = await ac.post(
+            f"/api/v1/admin/stores/{store.id}/menu-items",
+            headers=auth,
+            json={"name": "負值餐點", field: -1},
+        )
+
+    assert response.status_code == 422
+    assert db_session.query(MenuItem).count() == 0
+
+
+async def test_non_numeric_nutrition_is_rejected(client, auth, db_session):
+    store = _store(db_session)
+
+    async with client as ac:
+        response = await ac.post(
+            f"/api/v1/admin/stores/{store.id}/menu-items",
+            headers=auth,
+            json={"name": "餐點", "calories": "很多"},
+        )
+
+    assert response.status_code == 422
+    assert db_session.query(MenuItem).count() == 0
+
+
+@pytest.mark.parametrize("name", ["", "   "])
+async def test_menu_item_name_is_required(client, auth, db_session, name):
+    store = _store(db_session)
+
+    async with client as ac:
+        response = await ac.post(
+            f"/api/v1/admin/stores/{store.id}/menu-items", headers=auth, json={"name": name}
+        )
+
+    assert response.status_code == 422
+    assert db_session.query(MenuItem).count() == 0
+
+
+async def test_create_menu_item_under_missing_store_returns_404(client, auth, db_session):
+    """FR-035：不得產生無所屬店家的餐點。"""
+    async with client as ac:
+        response = await ac.post(
+            f"/api/v1/admin/stores/{uuid.uuid4()}/menu-items",
+            headers=auth,
+            json={"name": "孤兒餐點", "calories": 100},
+        )
+
+    assert response.status_code == 404
+    assert db_session.query(MenuItem).count() == 0, "不得產生無所屬店家的餐點"
+
+
+async def test_menu_item_list_is_scoped_to_its_store(client, auth, db_session):
+    """FR-033：只列出所選店家的餐點，不得混入其他店家。"""
+    store_a = _store(db_session, name="A 店")
+    store_b = _store(db_session, name="B 店")
+    _menu_item(db_session, store_a, name="A 的餐點")
+    _menu_item(db_session, store_b, name="B 的餐點")
+
+    async with client as ac:
+        response = await ac.get(f"/api/v1/admin/stores/{store_a.id}/menu-items", headers=auth)
+
+    assert response.status_code == 200
+    names = [item["name"] for item in response.json()["menu_items"]]
+    assert names == ["A 的餐點"]
+
+
+async def test_menu_item_list_of_missing_store_returns_404(client, auth):
+    async with client as ac:
+        response = await ac.get(f"/api/v1/admin/stores/{uuid.uuid4()}/menu-items", headers=auth)
+
+    assert response.status_code == 404
+
+
+async def test_empty_menu_returns_empty_list_not_error(client, auth, db_session):
+    """FR-036：尚無餐點是正常狀態，不是錯誤。"""
+    store = _store(db_session)
+
+    async with client as ac:
+        response = await ac.get(f"/api/v1/admin/stores/{store.id}/menu-items", headers=auth)
+
+    assert response.status_code == 200
+    assert response.json()["menu_items"] == []
+
+
+async def test_update_menu_item(client, auth, db_session):
+    store = _store(db_session)
+    item = _menu_item(db_session, store, calories=500)
+
+    async with client as ac:
+        response = await ac.patch(
+            f"/api/v1/admin/menu-items/{item.id}", headers=auth, json={"calories": 650}
+        )
+
+    assert response.status_code == 200
+    assert float(response.json()["calories"]) == pytest.approx(650)
+    # 未提供的欄位維持原值。
+    assert response.json()["name"] == "招牌餐點"
+
+
+async def test_update_can_clear_a_nutrition_value_to_null(client, auth, db_session):
+    """把已填的數值改回「未提供」是合法操作——例如發現先前登錄有誤。"""
+    store = _store(db_session)
+    item = _menu_item(db_session, store, protein_g=20)
+
+    async with client as ac:
+        response = await ac.patch(
+            f"/api/v1/admin/menu-items/{item.id}", headers=auth, json={"protein_g": None}
+        )
+
+    assert response.status_code == 200
+    assert response.json()["protein_g"] is None
+
+
+async def test_updating_one_store_menu_item_does_not_affect_another(client, auth, db_session):
+    """★ FR-034／憲章原則 V：不同店家的同名餐點各自獨立。"""
+    store_a = _store(db_session, name="A 店")
+    store_b = _store(db_session, name="B 店")
+    item_a = _menu_item(db_session, store_a, name="滷肉飯", calories=600)
+    item_b = _menu_item(db_session, store_b, name="滷肉飯", calories=600)
+
+    async with client as ac:
+        response = await ac.patch(
+            f"/api/v1/admin/menu-items/{item_a.id}", headers=auth, json={"calories": 900}
+        )
+
+    assert response.status_code == 200
+    db_session.refresh(item_b)
+    assert float(item_b.calories) == 600, "修改 A 店餐點連動改到了 B 店的同名餐點"
+
+
+async def test_update_missing_menu_item_returns_404(client, auth):
+    async with client as ac:
+        response = await ac.patch(
+            f"/api/v1/admin/menu-items/{uuid.uuid4()}", headers=auth, json={"calories": 100}
+        )
+
+    assert response.status_code == 404
+
+
+async def test_delete_menu_item_leaves_store_and_siblings_intact(client, auth, db_session):
+    """FR-030：刪除餐點不影響店家本身與其餘餐點。"""
+    store = _store(db_session)
+    target = _menu_item(db_session, store, name="要刪的")
+    _menu_item(db_session, store, name="要留的")
+
+    async with client as ac:
+        response = await ac.delete(f"/api/v1/admin/menu-items/{target.id}", headers=auth)
+
+    assert response.status_code == 204
+    assert db_session.query(Store).count() == 1
+    remaining = db_session.query(MenuItem).all()
+    assert [item.name for item in remaining] == ["要留的"]
+
+
+async def test_delete_missing_menu_item_returns_404(client, auth):
+    async with client as ac:
+        response = await ac.delete(f"/api/v1/admin/menu-items/{uuid.uuid4()}", headers=auth)
+
+    assert response.status_code == 404

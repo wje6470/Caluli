@@ -127,16 +127,16 @@ Web app 結構（沿用第一輪）：後端 `backend/app/`、`backend/tests/`�
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T027 [P] [US3] 在 `backend/tests/integration/test_admin_stores.py` 新增餐點區段：熱量填 -1→422（FR-032）；熱量填 0→201 成功且讀回為 `0`（FR-032 明確允許 0）；**熱量留空→201 成功且讀回為 `null` 而非 `0`**（FR-032 的不可逆性保護，若實作誤以 0 代替空值，此測試會失敗）；**只填熱量、三大營養素留空→201 成功**（四欄位彼此獨立，不比照座標的成對規則）；修改 A 店某餐點後 **B 店同名餐點數值不變**（FR-034）；於不存在的店家底下新增餐點→404 且不產生無主餐點（FR-035）；某店家的餐點清單**不含其他店家的餐點**（FR-033）。
+- [x] T027 [P] [US3] 在 `backend/tests/integration/test_admin_stores.py` 新增餐點區段：熱量填 -1→422（FR-032）；熱量填 0→201 成功且讀回為 `0`（FR-032 明確允許 0）；**熱量留空→201 成功且讀回為 `null` 而非 `0`**（FR-032 的不可逆性保護，若實作誤以 0 代替空值，此測試會失敗）；**只填熱量、三大營養素留空→201 成功**（四欄位彼此獨立，不比照座標的成對規則）；修改 A 店某餐點後 **B 店同名餐點數值不變**（FR-034）；於不存在的店家底下新增餐點→404 且不產生無主餐點（FR-035）；某店家的餐點清單**不含其他店家的餐點**（FR-033）。
 
 ### Implementation for User Story 3
 
-- [ ] T028 [US3] 在 `backend/app/schemas/admin.py` 新增 `MenuItemInput`／`MenuItemPatch`／`MenuItemOut`。欄位名稱**逐字沿用共用契約**（`calories`、`protein_g`、`carbs_g`、`fat_g`），**不加單位後綴**，即使第一輪的 `meal_items` 用的是 `calories_kcal`——契約優先於內部命名一致性。四項數值型別為 `Decimal | None = None` 且以 `Field(ge=0)` 約束（**T002 定案為選填**），`MenuItemInput.required` 只有 `name`。`MenuItemPatch` 須能區分「未提供該欄位＝維持原值」與「明確傳入 null＝改為未提供」，建議以 `model_fields_set` 判斷而非以值是否為 None 判斷。
-- [ ] T029 [US3] 在 `backend/app/services/admin_stores.py` 新增 `list_menu_items(store_id)`（須先確認店家存在，否則 `NOT_FOUND`）、`create_menu_item()`、`update_menu_item()`、`delete_menu_item()`。查詢一律以 `store_id` 收斂，不存在「查全部再過濾」的路徑。依賴 T006、T028。
-- [ ] T030 [US3] 建立 `backend/app/api/v1/admin_menu_items.py`：`APIRouter(tags=["admin"], dependencies=[Depends(require_admin)])`，實作 `GET /admin/stores/{store_id}/menu-items`、`POST /admin/stores/{store_id}/menu-items`、`PATCH /admin/menu-items/{menu_item_id}`、`DELETE /admin/menu-items/{menu_item_id}`。編輯與刪除以餐點自身 id 定位，**不提供變更所屬店家的語意**。並於 `backend/app/main.py` 掛載。依賴 T029。
-- [ ] T031 [P] [US3] 在 `frontend/src/lib/api/types.ts` 與 `endpoints.ts` 新增 `MenuItem` 型別與 `adminApi.menuItems` 的 list／create／update／remove。
-- [ ] T032 [US3] 建立 `frontend/src/app/admin/stores/[storeId]/page.tsx`：該店家的餐點清單表格（名稱／熱量／蛋白質／碳水／脂肪／操作），並實作**尚無餐點時的空狀態**——顯示說明與新增操作，不得是空白畫面或錯誤（FR-036）。**營養數值為 `null` 時顯示為「未提供」（或 `—`），MUST NOT 顯示為 0**（FR-033）。依賴 T031。
-- [ ] T033 [US3] 建立 `frontend/src/components/admin/MenuItemForm.tsx`：名稱與四項營養數值的新增／編輯表單，前端擋下負數與非數字輸入，允許 0，**允許留空**。留空時送出 `null` 而非 `0`（FR-032）。表單須以提示文字明確告知管理員「留空＝店家未提供」與「填 0＝確實為 0」的語意不同。
+- [x] T028 [US3] 在 `backend/app/schemas/admin.py` 新增 `MenuItemInput`／`MenuItemPatch`／`MenuItemOut`。欄位名稱**逐字沿用共用契約**（`calories`、`protein_g`、`carbs_g`、`fat_g`），**不加單位後綴**，即使第一輪的 `meal_items` 用的是 `calories_kcal`——契約優先於內部命名一致性。四項數值型別為 `Decimal | None = None` 且以 `Field(ge=0)` 約束（**T002 定案為選填**），`MenuItemInput.required` 只有 `name`。`MenuItemPatch` 須能區分「未提供該欄位＝維持原值」與「明確傳入 null＝改為未提供」，建議以 `model_fields_set` 判斷而非以值是否為 None 判斷。
+- [x] T029 [US3] 在 `backend/app/services/admin_stores.py` 新增 `list_menu_items(store_id)`（須先確認店家存在，否則 `NOT_FOUND`）、`create_menu_item()`、`update_menu_item()`、`delete_menu_item()`。查詢一律以 `store_id` 收斂，不存在「查全部再過濾」的路徑。依賴 T006、T028。
+- [x] T030 [US3] 建立 `backend/app/api/v1/admin_menu_items.py`：`APIRouter(tags=["admin"], dependencies=[Depends(require_admin)])`，實作 `GET /admin/stores/{store_id}/menu-items`、`POST /admin/stores/{store_id}/menu-items`、`PATCH /admin/menu-items/{menu_item_id}`、`DELETE /admin/menu-items/{menu_item_id}`。編輯與刪除以餐點自身 id 定位，**不提供變更所屬店家的語意**。並於 `backend/app/main.py` 掛載。依賴 T029。
+- [x] T031 [P] [US3] 在 `frontend/src/lib/api/types.ts` 與 `endpoints.ts` 新增 `MenuItem` 型別與 `adminApi.menuItems` 的 list／create／update／remove。
+- [x] T032 [US3] 建立 `frontend/src/app/admin/stores/[storeId]/page.tsx`：該店家的餐點清單表格（名稱／熱量／蛋白質／碳水／脂肪／操作），並實作**尚無餐點時的空狀態**——顯示說明與新增操作，不得是空白畫面或錯誤（FR-036）。**營養數值為 `null` 時顯示為「未提供」（或 `—`），MUST NOT 顯示為 0**（FR-033）。依賴 T031。
+- [x] T033 [US3] 建立 `frontend/src/components/admin/MenuItemForm.tsx`：名稱與四項營養數值的新增／編輯表單，前端擋下負數與非數字輸入，允許 0，**允許留空**。留空時送出 `null` 而非 `0`（FR-032）。表單須以提示文字明確告知管理員「留空＝店家未提供」與「填 0＝確實為 0」的語意不同。
 
 **Checkpoint**: US1～US3 皆可獨立運作。後台已能完整維護店家與餐點。
 
@@ -289,4 +289,5 @@ pytest backend/tests/integration/test_admin_access_control.py -v
 | T002 | 2026-08-04 | 三項全數定案：主鍵 **UUID**（雙方一致）；四個營養欄位 **nullable**（採納第二輪 OQ-2b 主張，本輪由 NOT NULL 改為可空）；`name` 用 **`VARCHAR(255)`**（從第一輪慣例，對讀取端無影響）。結論已同步回共用契約檔，spec／data-model／contracts 亦已連帶更新。**T008 的阻塞已解除。** |
 | US1 驗收 | 2026-08-04 | **通過。** 自動化：98 passed / 0 skipped（真 PostgreSQL），其中安全性 8 項 + 名單核對 15 項 + 登入角色同步 6 項；並以突變測試確認「拿掉權限保護時測試會失敗」。實機：後端 API 四項全對（管理員 200／一般使用者 403／未登入 401／一般使用者打一般 API 200，證明其 token 有效）；瀏覽器守衛情境 A～D 全對，**導離過程未閃現任何後台畫面**（FR-017）。前端 typecheck／lint／build／vitest 全綠。 |
 | US2 驗收 | 2026-08-04 | **通過。** 139 passed（真 PostgreSQL）。migration 0002 已套用，schema 與 data-model.md 逐欄一致（3 條座標 CHECK、4 條營養 CHECK、FK CASCADE、ix_menu_items_store）。實機驗證：建立含／不含座標店家皆 201、清單帶 menu_item_count、一般使用者存取店家 API 403、透過 API 刪除店家後殘留餐點數為 0。前端 typecheck／lint／build 全綠。 |
+| US3 驗收 | 2026-08-04 | **通過。** 172 passed（真 PostgreSQL），其中安全測試 35 項涵蓋契約定義的全部 10 支端點。實機驗證：只填熱量→其餘欄位為 null 而非 0；零卡飲料→calories/fat_g 存為 0 且 protein_g 仍為 null（NULL 與 0 可區分）；負數→422 附可讀訊息；不存在的店家底下新增→404 且不產生孤兒餐點。前端 typecheck／lint／build／vitest 全綠。 |
 | T037 | | |
