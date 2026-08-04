@@ -2,6 +2,7 @@
 
 import { api } from './client'
 import type {
+  AdminSession,
   DashboardResponse,
   HealthProfile,
   HealthProfileInput,
@@ -63,4 +64,20 @@ export const analyticsApi = {
 export const foodApi = {
   search: (q: string) =>
     api.get<{ foods: FoodReference[] }>(`/foods/search?q=${encodeURIComponent(q)}`),
+}
+
+/**
+ * 管理端（第三輪）。路徑以 /admin 起始，沿用同一個 NEXT_PUBLIC_API_BASE_URL
+ * （已含 /api/v1）——刻意不另立 base URL，見 research.md R-01。
+ */
+export const adminApi = {
+  /**
+   * 確認目前使用者具備管理員身分。
+   *
+   * 用「呼叫受保護端點看它通不通過」來判斷權限，與後端實際的授權判斷走
+   * 同一條路徑；若改讀 /me 的欄位自行判斷，就會出現第二套邏輯（R-11）。
+   *
+   * 非管理員會拿到 403，一般使用者未登入則是 401。
+   */
+  me: () => api.get<AdminSession>('/admin/me'),
 }

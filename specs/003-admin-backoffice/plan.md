@@ -111,7 +111,9 @@ backend/
 │   │   └── admin.py                         # 新增：Store / MenuItem 的 In/Out schema
 │   ├── services/
 │   │   ├── admin_roles.py                   # 新增：名單核對與角色同步
-│   │   ├── stores.py                        # 新增：店家／餐點 CRUD 業務邏輯
+│   │   ├── admin_stores.py                  # 新增：店家／餐點 CRUD 業務邏輯
+│   │   │                                    #   ⚠️ 刻意不叫 stores.py——第二輪已規劃
+│   │   │                                    #   services/stores.py 放讀取查詢管線，同名會硬衝突
 │   │   └── line_auth.py                     # 修改：upsert_user() 內呼叫角色核對
 │   └── main.py                              # 修改：掛載 3 個 admin router
 └── tests/

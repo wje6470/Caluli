@@ -28,7 +28,7 @@ Web app 結構（沿用第一輪）：後端 `backend/app/`、`backend/tests/`�
 
 **Purpose**: tasks brief 明確要求：不得直接假設需要新建表，先確認資料庫現況。
 
-- [ ] T001 檢查 `stores` / `menu_items` 的資料表與 migration 現況，確認本輪是否需要建表。執行 `ls backend/alembic/versions/`、`git ls-tree -r --name-only origin/main -- backend/alembic/versions`、`git ls-tree -r --name-only origin/feature/round2-restaurant -- backend/alembic/versions`，並在 `backend/app/db/models/` 下確認無 `store.py` / `menu_item.py`。將結論記錄於本檔末的「執行紀錄」。
+- [x] T001 檢查 `stores` / `menu_items` 的資料表與 migration 現況，確認本輪是否需要建表。執行 `ls backend/alembic/versions/`、`git ls-tree -r --name-only origin/main -- backend/alembic/versions`、`git ls-tree -r --name-only origin/feature/round2-restaurant -- backend/alembic/versions`，並在 `backend/app/db/models/` 下確認無 `store.py` / `menu_item.py`。將結論記錄於本檔末的「執行紀錄」。
 
   > **2026-08-04 已先行查證的結果**：`main`、`feature/round2-restaurant`、`feature/round3-admin` 三個分支的 `backend/alembic/versions/` 皆**只有** `20260803_0001_initial_schema.py`，且三者的 `backend/app/db/models/` 皆無店家／餐點 model。第二輪目前只完成 specify + plan，**尚未 implement**。
   > **結論：本輪需要建表**（T008）。
@@ -56,8 +56,8 @@ Web app 結構（沿用第一輪）：後端 `backend/app/`、`backend/tests/`�
 
 **⚠️ CRITICAL**: T008 必須在 T002 定案後才能執行。
 
-- [ ] T003 [P] 在 `backend/app/core/config.py` 的 `Settings` 新增 `admin_line_user_ids: str = ""`（逗號分隔字串，非 JSON 陣列）與 `admin_line_user_id_set` property，property 需 `strip()` 每個元素並過濾空字串後回傳 `frozenset[str]`。理由見 [research.md R-04](./research.md#r-04管理員名單的環境變數格式)。
-- [ ] T004 [P] 在 `backend/.env.example` 補上 `ADMIN_LINE_USER_IDS=`，附註格式為逗號分隔、留空代表無人是管理員、正式環境須以加密環境變數設定且不得提交進版控。
+- [x] T003 [P] 在 `backend/app/core/config.py` 的 `Settings` 新增 `admin_line_user_ids: str = ""`（逗號分隔字串，非 JSON 陣列）與 `admin_line_user_id_set` property，property 需 `strip()` 每個元素並過濾空字串後回傳 `frozenset[str]`。理由見 [research.md R-04](./research.md#r-04管理員名單的環境變數格式)。
+- [x] T004 [P] 在 `backend/.env.example` 補上 `ADMIN_LINE_USER_IDS=`，附註格式為逗號分隔、留空代表無人是管理員、正式環境須以加密環境變數設定且不得提交進版控。
 - [ ] T005 [P] 建立 `backend/app/db/models/store.py`：`Store(Base, TimestampMixin)`，`__tablename__ = "stores"`，欄位 `id`／`name`／`address`／`latitude`／`longitude` 依 [data-model.md](./data-model.md) 的型別與可空性；加上三條 CHECK：`ck_stores_coords_paired`（`(latitude IS NULL) = (longitude IS NULL)`）、`ck_stores_latitude_range`、`ck_stores_longitude_range`。**不加 UNIQUE 於 name**（FR-027）。
 - [ ] T006 [P] 建立 `backend/app/db/models/menu_item.py`：`MenuItem(Base, TimestampMixin)`，`__tablename__ = "menu_items"`，`store_id` 為 `ForeignKey("stores.id", ondelete="CASCADE")` 且 `nullable=False`；`calories`／`protein_g`／`carbs_g`／`fat_g` 四者型別為 `Mapped[Decimal | None]`（**nullable，T002 定案**），四者皆加 `CHECK >= 0`（PostgreSQL 的 CHECK 對 NULL 求值為 UNKNOWN 而不拒絕，故不需額外寫 `IS NULL OR`）。在檔案 docstring 明確標註兩件事：（a）本類別與既有 `MealItem` 的語意差異與「兩者無任何關聯」；（b）**空值＝店家未提供、0＝確實為零，寫入時不得以 0 代替空值**。
 - [ ] T007 在 `backend/app/db/models/__init__.py` 匯入並加入 `__all__`：`Store`、`MenuItem`（供 Alembic autogenerate 掃描）。依賴 T005、T006。
@@ -78,17 +78,17 @@ Web app 結構（沿用第一輪）：後端 `backend/app/`、`backend/tests/`�
 
 > 先寫測試並確認其失敗，再進行實作。
 
-- [ ] T010 [P] [US1] 建立 `backend/tests/unit/test_admin_roles.py`：涵蓋名單核對的 5 種情境——在名單內→`admin`；不在名單內→`user`；名單為空→全部為 `user`（且不報錯）；名單含空白與換行的容錯；**已是 `admin` 但被移出名單→降回 `user`**（FR-007 的關鍵路徑，只升不降的實作會在此失敗）。
-- [ ] T011 [P] [US1] 建立 `backend/tests/integration/test_admin_access_control.py`：**這是憲章原則 IV 明列的必測情境，獨立成檔以便單獨執行與驗收**。對 [contracts/admin-api.yaml](./contracts/admin-api.yaml) 定義的全部 10 支管理端端點各發一次請求，斷言：（a）持一般使用者有效 token 時全部回 **403**；（b）10 支端點的回應 body **逐字完全相同**（同 code、同 message、同 retryable），確保無法藉差異推測何者存在（FR-015）；（c）不帶 token 時全部回 **401** 而非 403（FR-016）；（d）寫入類請求（POST／PATCH／DELETE）執行後資料庫**無任何變更**（FR-014）。
+- [x] T010 [P] [US1] 建立 `backend/tests/unit/test_admin_roles.py`：涵蓋名單核對的 5 種情境——在名單內→`admin`；不在名單內→`user`；名單為空→全部為 `user`（且不報錯）；名單含空白與換行的容錯；**已是 `admin` 但被移出名單→降回 `user`**（FR-007 的關鍵路徑，只升不降的實作會在此失敗）。
+- [x] T011 [P] [US1] 建立 `backend/tests/integration/test_admin_access_control.py`：**這是憲章原則 IV 明列的必測情境，獨立成檔以便單獨執行與驗收**。對 [contracts/admin-api.yaml](./contracts/admin-api.yaml) 定義的全部 10 支管理端端點各發一次請求，斷言：（a）持一般使用者有效 token 時全部回 **403**；（b）10 支端點的回應 body **逐字完全相同**（同 code、同 message、同 retryable），確保無法藉差異推測何者存在（FR-015）；（c）不帶 token 時全部回 **401** 而非 403（FR-016）；（d）寫入類請求（POST／PATCH／DELETE）執行後資料庫**無任何變更**（FR-014）。
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] 建立 `backend/app/services/admin_roles.py`：實作 `resolve_role(line_user_id: str) -> str`，依 `get_settings().admin_line_user_id_set` 回傳 `ROLE_ADMIN` 或 `ROLE_USER`。此函式為**純函式、不碰資料庫**，使 T010 可在無 Docker 環境執行。依賴 T003。
-- [ ] T013 [US1] 修改 `backend/app/services/line_auth.py` 的 `upsert_user()`：在既有的 `display_name` / `picture_url` 更新之後、`db.flush()` 之前，加入 `user.role = resolve_role(identity.line_user_id)`。**必須是雙向同步**（名單內設 admin、名單外設 user），只升不降會讓 FR-007 失效。加註解說明「直接於資料庫授予 admin 會在下次登入被覆寫，授予一律走名單」。依賴 T012。
-- [ ] T014 [US1] 建立 `backend/app/api/v1/admin_session.py`：`router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])`，實作 `GET /admin/me` 回傳 `AdminSession`（`user_id`／`display_name`／`role`）。**權限依賴掛在 router 建構參數上，不寫在端點函式簽章**（[research.md R-02](./research.md#r-02權限檢查層的掛載方式)）。既有的 `require_admin()` 直接使用，不修改 `backend/app/core/deps.py`。
-- [ ] T015 [US1] 修改 `backend/app/main.py`：於既有的 `v1` router 上 `v1.include_router(admin_session.router)`。確認掛載位置在 catch-all 404 路由**之前**（該路由必須維持在所有 router 之後）。依賴 T014。
-- [ ] T016 [US1] 建立 `frontend/src/app/admin/layout.tsx`：呼叫 `GET /admin/me`，401／403 時 `router.replace('/dashboard')`；**在確認為管理員之前不得渲染任何後台內容**（不得閃現表格骨架、欄位名稱或功能標題，FR-017）。此檔案**刻意不放在 `(app)` 路由群組內**——該群組的 layout 會強制未建檔者導向 `/onboarding`，管理員多半未填健康檔案，放進去會被擋在後台外（[research.md R-10](./research.md#r-10前端後台的路由位置)）。不使用 `BottomNav`，不套用 `max-w-md` 手機寬度。
-- [ ] T017 [US1] 驗證 `frontend/src/components/ui/BottomNav.tsx` 與 `frontend/src/app/(app)/layout.tsx` **未被修改且不含任何指向 `/admin` 的連結**（FR-017、SC-003）。本輪不新增後台入口連結，管理員以直接輸入網址進入，此作法已記於 [quickstart.md](./quickstart.md)。
+- [x] T012 [US1] 建立 `backend/app/services/admin_roles.py`：實作 `resolve_role(line_user_id: str) -> str`，依 `get_settings().admin_line_user_id_set` 回傳 `ROLE_ADMIN` 或 `ROLE_USER`。此函式為**純函式、不碰資料庫**，使 T010 可在無 Docker 環境執行。依賴 T003。
+- [x] T013 [US1] （另補 `backend/tests/integration/test_admin_role_sync.py` 驗證此掛接確實生效——resolve_role() 正確但沒接上登入流程等同沒有）修改 `backend/app/services/line_auth.py` 的 `upsert_user()`：在既有的 `display_name` / `picture_url` 更新之後、`db.flush()` 之前，加入 `user.role = resolve_role(identity.line_user_id)`。**必須是雙向同步**（名單內設 admin、名單外設 user），只升不降會讓 FR-007 失效。加註解說明「直接於資料庫授予 admin 會在下次登入被覆寫，授予一律走名單」。依賴 T012。
+- [x] T014 [US1] 建立 `backend/app/api/v1/admin_session.py`：`router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])`，實作 `GET /admin/me` 回傳 `AdminSession`（`user_id`／`display_name`／`role`）。**權限依賴掛在 router 建構參數上，不寫在端點函式簽章**（[research.md R-02](./research.md#r-02權限檢查層的掛載方式)）。既有的 `require_admin()` 直接使用，不修改 `backend/app/core/deps.py`。
+- [x] T015 [US1] 修改 `backend/app/main.py`：於既有的 `v1` router 上 `v1.include_router(admin_session.router)`。確認掛載位置在 catch-all 404 路由**之前**（該路由必須維持在所有 router 之後）。依賴 T014。
+- [x] T016 [US1] 建立 `frontend/src/app/admin/layout.tsx`：呼叫 `GET /admin/me`，401／403 時 `router.replace('/dashboard')`；**在確認為管理員之前不得渲染任何後台內容**（不得閃現表格骨架、欄位名稱或功能標題，FR-017）。此檔案**刻意不放在 `(app)` 路由群組內**——該群組的 layout 會強制未建檔者導向 `/onboarding`，管理員多半未填健康檔案，放進去會被擋在後台外（[research.md R-10](./research.md#r-10前端後台的路由位置)）。不使用 `BottomNav`，不套用 `max-w-md` 手機寬度。
+- [x] T017 [US1] 驗證 `frontend/src/components/ui/BottomNav.tsx` 與 `frontend/src/app/(app)/layout.tsx` **未被修改且不含任何指向 `/admin` 的連結**（FR-017、SC-003）。本輪不新增後台入口連結，管理員以直接輸入網址進入，此作法已記於 [quickstart.md](./quickstart.md)。
 
 **Checkpoint**: US1 完成 → 權限邊界已成立，可獨立驗收。此時後台是空的，但安全價值已交付。
 
@@ -107,7 +107,7 @@ Web app 結構（沿用第一輪）：後端 `backend/app/`、`backend/tests/`�
 ### Implementation for User Story 2
 
 - [ ] T019 [US2] 建立 `backend/app/schemas/admin.py`：`StoreInput`／`StorePatch`／`StoreOut`／`StoreWithCountOut`，欄位依 [contracts/admin-api.yaml](./contracts/admin-api.yaml)。以 pydantic `model_validator` 實作**座標成對驗證**——`StorePatch` 須以「套用更新後的最終狀態」判定，而非只看本次請求帶了哪些欄位（FR-022）。緯經度範圍以 `Field(ge=..., le=...)` 約束（FR-023）。錯誤訊息為可直接呈現的中文。
-- [ ] T020 [US2] 建立 `backend/app/services/stores.py`：實作 `list_stores()`（以 `LEFT OUTER JOIN + GROUP BY` 一次帶出每筆的 `menu_item_count`，[research.md R-08](./research.md#r-08刪除前如何取得將一併刪除的餐點數量)）、`get_store()`、`create_store()`、`update_store()`、`delete_store()`。查無資料一律 `raise AppError("NOT_FOUND")`。依賴 T005、T019。
+- [ ] T020 [US2] 建立 `backend/app/services/admin_stores.py`（**檔名刻意不用 `stores.py`**——第二輪已規劃 `services/stores.py` 存放讀取查詢管線，同名會在合併時硬衝突）：實作 `list_stores()`（以 `LEFT OUTER JOIN + GROUP BY` 一次帶出每筆的 `menu_item_count`，[research.md R-08](./research.md#r-08刪除前如何取得將一併刪除的餐點數量)）、`get_store()`、`create_store()`、`update_store()`、`delete_store()`。查無資料一律 `raise AppError("NOT_FOUND")`。依賴 T005、T019。
 - [ ] T021 [US2] 建立 `backend/app/api/v1/admin_stores.py`：`APIRouter(prefix="/admin/stores", tags=["admin"], dependencies=[Depends(require_admin)])`，實作 `GET /`、`POST /`、`GET /{store_id}`、`PATCH /{store_id}`、`DELETE /{store_id}`（204 無回應體）。並於 `backend/app/main.py` 掛載。依賴 T020。
 - [ ] T022 [P] [US2] 在 `frontend/src/lib/api/types.ts` 新增 `Store`／`StoreWithCount`／`StoreInput` 型別，在 `frontend/src/lib/api/endpoints.ts` 新增 `adminApi.stores` 的 list／create／get／update／remove。路徑以 `/admin/stores...` 起始，沿用既有 `NEXT_PUBLIC_API_BASE_URL`（已含 `/api/v1`），**不新增第二個 base URL 環境變數**（[research.md R-01](./research.md#r-01管理端-api-的路由前綴)）。
 - [ ] T023 [US2] 建立 `frontend/src/app/admin/page.tsx`：以原生 `<table>` 呈現店家清單（名稱／地址／座標狀態／餐點數／操作），沿用既有 TanStack Query。**不引入任何 UI 元件庫、表格庫或表單庫**（[research.md R-13](./research.md#r-13後台介面的技術選擇)）。依賴 T016、T022。
@@ -132,7 +132,7 @@ Web app 結構（沿用第一輪）：後端 `backend/app/`、`backend/tests/`�
 ### Implementation for User Story 3
 
 - [ ] T028 [US3] 在 `backend/app/schemas/admin.py` 新增 `MenuItemInput`／`MenuItemPatch`／`MenuItemOut`。欄位名稱**逐字沿用共用契約**（`calories`、`protein_g`、`carbs_g`、`fat_g`），**不加單位後綴**，即使第一輪的 `meal_items` 用的是 `calories_kcal`——契約優先於內部命名一致性。四項數值型別為 `Decimal | None = None` 且以 `Field(ge=0)` 約束（**T002 定案為選填**），`MenuItemInput.required` 只有 `name`。`MenuItemPatch` 須能區分「未提供該欄位＝維持原值」與「明確傳入 null＝改為未提供」，建議以 `model_fields_set` 判斷而非以值是否為 None 判斷。
-- [ ] T029 [US3] 在 `backend/app/services/stores.py` 新增 `list_menu_items(store_id)`（須先確認店家存在，否則 `NOT_FOUND`）、`create_menu_item()`、`update_menu_item()`、`delete_menu_item()`。查詢一律以 `store_id` 收斂，不存在「查全部再過濾」的路徑。依賴 T006、T028。
+- [ ] T029 [US3] 在 `backend/app/services/admin_stores.py` 新增 `list_menu_items(store_id)`（須先確認店家存在，否則 `NOT_FOUND`）、`create_menu_item()`、`update_menu_item()`、`delete_menu_item()`。查詢一律以 `store_id` 收斂，不存在「查全部再過濾」的路徑。依賴 T006、T028。
 - [ ] T030 [US3] 建立 `backend/app/api/v1/admin_menu_items.py`：`APIRouter(tags=["admin"], dependencies=[Depends(require_admin)])`，實作 `GET /admin/stores/{store_id}/menu-items`、`POST /admin/stores/{store_id}/menu-items`、`PATCH /admin/menu-items/{menu_item_id}`、`DELETE /admin/menu-items/{menu_item_id}`。編輯與刪除以餐點自身 id 定位，**不提供變更所屬店家的語意**。並於 `backend/app/main.py` 掛載。依賴 T029。
 - [ ] T031 [P] [US3] 在 `frontend/src/lib/api/types.ts` 與 `endpoints.ts` 新增 `MenuItem` 型別與 `adminApi.menuItems` 的 list／create／update／remove。
 - [ ] T032 [US3] 建立 `frontend/src/app/admin/stores/[storeId]/page.tsx`：該店家的餐點清單表格（名稱／熱量／蛋白質／碳水／脂肪／操作），並實作**尚無餐點時的空狀態**——顯示說明與新增操作，不得是空白畫面或錯誤（FR-036）。**營養數值為 `null` 時顯示為「未提供」（或 `—`），MUST NOT 顯示為 0**（FR-033）。依賴 T031。
@@ -285,5 +285,7 @@ pytest backend/tests/integration/test_admin_access_control.py -v
 | 任務 | 日期 | 結論 |
 |------|------|------|
 | T001 | 2026-08-04（預查） | `main`／`round2`／`round3` 三分支皆只有 `0001` migration，無店家／餐點 model；第二輪僅完成 specify + plan 未 implement。**本輪需要建表。** 實作開跑時仍須重跑確認。 |
+| T001 | 2026-08-04（implement 前重跑，含 `git fetch`） | 結論不變：三分支仍只有 `20260803_0001_initial_schema.py`，且 `0001` 的 docstring 已明載其未建立任何店家／餐點資料表；`backend/app/db/models/` 無 `store.py`／`menu_item.py`。**確認本輪需新建 migration（T008，US2 範圍）**。 |
 | T002 | 2026-08-04 | 三項全數定案：主鍵 **UUID**（雙方一致）；四個營養欄位 **nullable**（採納第二輪 OQ-2b 主張，本輪由 NOT NULL 改為可空）；`name` 用 **`VARCHAR(255)`**（從第一輪慣例，對讀取端無影響）。結論已同步回共用契約檔，spec／data-model／contracts 亦已連帶更新。**T008 的阻塞已解除。** |
+| US1 驗收 | 2026-08-04 | **通過。** 自動化：98 passed / 0 skipped（真 PostgreSQL），其中安全性 8 項 + 名單核對 15 項 + 登入角色同步 6 項；並以突變測試確認「拿掉權限保護時測試會失敗」。實機：後端 API 四項全對（管理員 200／一般使用者 403／未登入 401／一般使用者打一般 API 200，證明其 token 有效）；瀏覽器守衛情境 A～D 全對，**導離過程未閃現任何後台畫面**（FR-017）。前端 typecheck／lint／build／vitest 全綠。 |
 | T037 | | |

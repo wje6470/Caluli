@@ -111,17 +111,47 @@ alembic upgrade head
 ```bash
 cd backend
 
-# 全部（整合測試需要 Docker 或 TEST_DATABASE_URL）
-pytest
-
-# 只跑不需要資料庫的權限與名單邏輯
-pytest tests/unit/
+# 全部
+uv run pytest
 
 # 只跑本輪的管理端測試
-pytest tests/unit/test_admin_roles.py tests/integration/test_admin_access_control.py tests/integration/test_admin_stores.py
+uv run pytest tests/unit/test_admin_roles.py \
+              tests/integration/test_admin_access_control.py \
+              tests/integration/test_admin_role_sync.py
+
+# ★ 安全性驗收單獨執行（憲章原則 IV 的必測情境）
+uv run pytest tests/integration/test_admin_access_control.py -v
 ```
 
-Docker 不可用且未設 `TEST_DATABASE_URL` 時，整合測試會自動 skip，單元測試仍會執行（既有 conftest 行為）。
+### 整合測試需要 PostgreSQL
+
+conftest 的解析順序為 `TEST_DATABASE_URL` → testcontainers（需 Docker）→ skip。
+
+**已知陷阱**：Docker 不可用且未設 `TEST_DATABASE_URL` 時，整合測試會**靜默 skip**，測試結果仍是綠的——但涵蓋率其實少了四成。跑完務必確認輸出沒有大量 `s`。
+
+若沒有 Docker，安裝本機 PostgreSQL 即可（本專案已驗證此路徑）：
+
+```powershell
+winget install PostgreSQL.PostgreSQL.16 --source winget --silent `
+  --accept-package-agreements --accept-source-agreements `
+  --custom '--superpassword caluli --serverport 55432 --enable-components server,commandlinetools'
+```
+
+```powershell
+$pg = "C:\Program Files\PostgreSQL\16\bin"; $env:PGPASSWORD = "caluli"
+& "$pg\psql.exe" -U postgres -p 55432 -h 127.0.0.1 -c "CREATE DATABASE caluli_test;"
+& "$pg\psql.exe" -U postgres -p 55432 -h 127.0.0.1 -d caluli_test -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+```
+
+```bash
+export TEST_DATABASE_URL="postgresql+psycopg://postgres:caluli@127.0.0.1:55432/caluli_test"
+uv run pytest        # 應為 98 passed, 0 skipped
+```
+
+埠號刻意用 55432，與專案 `docker-compose.yml` 一致，兩種方式可互換。
+
+> `tests/integration/test_admin_access_control.py` 刻意設計為**不需資料庫**，
+> 因此即使在沒有 PostgreSQL 的環境，憲章明列的必測情境仍會實際執行。
 
 ---
 

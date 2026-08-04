@@ -27,6 +27,7 @@ from app.core.errors import AppError
 from app.core.security import create_access_token
 from app.db.models import User
 from app.schemas.profile import SessionResponse, UserOut
+from app.services.admin_roles import resolve_role
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,10 @@ def upsert_user(db: Session, identity: LineIdentity) -> User:
 
     同一 LINE 身分不論從哪個入口登入都對應同一列——這是 FR-007
     「兩入口看到同一份資料」在資料層的保證。
+
+    角色核對也放在這裡，因為這是 LIFF 與一般網頁**唯一的匯流點**：
+    改這一處即涵蓋兩個入口與未來的原生客戶端，不需為任何入口寫特例
+    （憲章原則 I）。
     """
     user = db.scalar(select(User).where(User.line_user_id == identity.line_user_id))
 
@@ -119,6 +124,14 @@ def upsert_user(db: Session, identity: LineIdentity) -> User:
     # 每次登入更新顯示資訊，讓使用者改了 LINE 暱稱後能反映。
     user.display_name = identity.display_name
     user.picture_url = identity.picture_url
+
+    # ★ 角色核對必須**雙向**：名單內 → admin，名單外 → user（FR-006、FR-007）。
+    #   寫成只升不降會讓「從名單移除」完全失效，而那是撤銷管理員的主要手段。
+    #
+    #   ⚠️ 副作用：直接在資料庫把 role 改成 admin **無效**，會在此被覆寫。
+    #      授予一律走 ADMIN_LINE_USER_IDS 名單；資料庫直改僅能作為緊急撤銷，
+    #      且撤銷後須同步移出名單，否則下次登入即復原。
+    user.role = resolve_role(identity.line_user_id)
 
     db.flush()
     db.refresh(user)

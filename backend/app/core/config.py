@@ -66,6 +66,23 @@ class Settings(BaseSettings):
         "image/webp",
     )
 
+    # --- 管理員名單（第三輪，憲章原則 IV）---
+    #
+    # 管理員身分**只能**由此設定指派，系統中不存在任何可寫入 users.role
+    # 的 API。登入時（services/admin_roles.py）以此名單核對並**雙向同步**：
+    # 在名單內 → admin，不在名單內 → user。
+    #
+    # ⚠️ 因為是雙向同步，**直接改資料庫授予 admin 無效**（下次登入被覆寫）。
+    #    資料庫直改僅能作為緊急撤銷手段，且撤銷後必須同步移出本名單，
+    #    否則下次登入即復原。
+    #
+    # ⚠️ 格式為**半形逗號分隔的字串**，不是 JSON 陣列——pydantic-settings
+    #    對 list[str] 欄位要求環境變數為 JSON，而引號在 .env、docker-compose
+    #    與 Vercel 環境變數面板中都容易被吃掉或轉義錯誤。
+    #
+    # 留空 = 無人是管理員（後台無人可進入），而非全體開放。
+    admin_line_user_ids: str = ""
+
     # --- 其他 ---
     #: 部署於 Vercel 等 serverless 平台時設為 true。
     #: 影響資料庫連線策略（見 db/session.py）——serverless 下必須關閉
@@ -84,6 +101,17 @@ class Settings(BaseSettings):
             "https://127.0.0.1:3000",
         ]
     )
+
+    @property
+    def admin_line_user_id_set(self) -> frozenset[str]:
+        """管理員 LINE user ID 集合。
+
+        容忍逗號後的空白與換行——設定值常從多行貼上。回傳 frozenset
+        使核對為 O(1) 且不可變，杜絕任何位置意外修改名單。
+        """
+        return frozenset(
+            piece.strip() for piece in self.admin_line_user_ids.split(",") if piece.strip()
+        )
 
 
 @lru_cache

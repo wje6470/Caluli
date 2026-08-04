@@ -12,7 +12,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api.v1 import analytics, auth, foods, meal_records, profile, recognitions
+from app.api.v1 import (
+    admin_session,
+    analytics,
+    auth,
+    foods,
+    meal_records,
+    profile,
+    recognitions,
+)
 from app.core.config import get_settings
 from app.core.deps import DbSession
 from app.core.errors import AppError, app_error_handler
@@ -60,6 +68,14 @@ v1.include_router(recognitions.router)
 v1.include_router(meal_records.router)
 v1.include_router(analytics.router)
 v1.include_router(foods.router)
+
+# --- 管理端（憲章原則 IV）---
+# 與上方一般使用者端點分開掛載。權限檢查掛在各 admin router 的建構參數上
+# （dependencies=[Depends(require_admin)]），不在此處逐一補掛——那樣會在
+# 新增 router 時產生「忘記加」的空間。US2／US3 的 admin_stores 與
+# admin_menu_items 於此處加入。
+v1.include_router(admin_session.router)
+
 app.include_router(v1)
 
 

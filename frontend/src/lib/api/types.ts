@@ -168,3 +168,14 @@ export interface TrendResponse {
   average: number
   target_achievement_rate: number
 }
+
+// ─── 管理端（第三輪）────────────────────────────────────────────────
+// 對應 specs/003-admin-backoffice/contracts/admin-api.yaml
+// 店家與餐點的型別於 US2／US3 加入。
+
+/** GET /admin/me 的回應。非管理員拿不到 200，故 role 必為 'admin'。 */
+export interface AdminSession {
+  user_id: string
+  display_name: string | null
+  role: 'admin'
+}
