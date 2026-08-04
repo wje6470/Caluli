@@ -1,0 +1,440 @@
+openapi: 3.1.0
+info:
+  title: Caluli 管理端 API（第三輪：角色與後台）
+  version: 0.3.0
+  description: |
+    店家／餐點的後台維護端點。本輪負責**寫入**；使用者端的唯讀查詢屬第二輪，
+    不在本契約範圍。
+
+    設計要點：
+    - 全部端點掛在同一個 router 群組，該群組以
+      `dependencies=[Depends(require_admin)]` 統一套用權限檢查（research R-02）。
+      端點函式內**不重複手寫**角色判斷（憲章「架構約束」）。
+    - 全部端點共用同一個 `Forbidden` 回應定義，使 FR-015「所有管理端功能的
+      拒絕回應彼此一致」在契約層即可驗證，而非僅靠實作自律。
+    - 前綴為 `/api/v1/admin`（非 `/api/admin`），與既有版本化一致，前端沿用
+      同一個 NEXT_PUBLIC_API_BASE_URL（research R-01）。
+    - 資料欄位完全依 reference/shared-schema-store-menu.md，不增減不更名。
+
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: admin
+    description: |
+      全部需要管理員角色。一般使用者的有效登入狀態一律回 403，
+      且回應內容不透露端點的用途或存在性。
+
+paths:
+  /admin/me:
+    get:
+      tags: [admin]
+      summary: 確認目前登入者具備管理員身分
+      description: |
+        供前端後台守衛探測用（research R-11）。刻意不在既有 `/me` 加 role 欄位，
+        以免改動第一輪契約，並確保前端的權限判斷與後端走同一條路徑。
+        回應不含任何 LINE 憑證或管理員名單資訊。
+      responses:
+        '200':
+          description: 是管理員
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSession'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/stores:
+    get:
+      tags: [admin]
+      summary: 店家清單
+      description: |
+        每筆附 `menu_item_count`，供清單顯示與刪除確認提示使用，
+        前端無需額外請求（research R-08）。未設定座標者 `latitude`/`longitude`
+        為 null，前端據此顯示待補標示（FR-025）。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stores]
+                properties:
+                  stores:
+                    type: array
+                    items: { $ref: '#/components/schemas/StoreWithCount' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+    post:
+      tags: [admin]
+      summary: 新增店家
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreInput' }
+      responses:
+        '201':
+          description: 已建立
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Store' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /admin/stores/{store_id}:
+    parameters:
+      - $ref: '#/components/parameters/StoreId'
+
+    get:
+      tags: [admin]
+      summary: 單一店家
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Store' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    patch:
+      tags: [admin]
+      summary: 編輯店家
+      description: |
+        部分更新。座標的成對規則以「更新後的最終狀態」判定——
+        例如原本有座標、只送 `latitude: null` 而未送 `longitude`，
+        會因最終狀態不成對而被拒（FR-022）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StorePatch' }
+      responses:
+        '200':
+          description: 已更新
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Store' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+    delete:
+      tags: [admin]
+      summary: 刪除店家（連帶刪除其所有餐點）
+      description: |
+        實刪除，且資料庫層 `ON DELETE CASCADE` 會一併移除該店家底下的所有
+        餐點（FR-037、FR-040）。**二次確認由前端負責**——後端不提供
+        「預覽將刪除幾筆」的獨立端點，該數量取自清單的 `menu_item_count`
+        （research R-08）。
+      responses:
+        '204':
+          description: 已刪除（含其所有餐點）
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/stores/{store_id}/menu-items:
+    parameters:
+      - $ref: '#/components/parameters/StoreId'
+
+    get:
+      tags: [admin]
+      summary: 該店家的餐點清單
+      description: 僅回傳隸屬於此 store_id 的餐點，不混入其他店家（FR-033）。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [menu_items]
+                properties:
+                  menu_items:
+                    type: array
+                    items: { $ref: '#/components/schemas/MenuItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    post:
+      tags: [admin]
+      summary: 於該店家底下新增餐點
+      description: 店家不存在時回 404，不建立無所屬店家的餐點（FR-035）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuItemInput' }
+      responses:
+        '201':
+          description: 已建立
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MenuItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /admin/menu-items/{menu_item_id}:
+    parameters:
+      - $ref: '#/components/parameters/MenuItemId'
+
+    patch:
+      tags: [admin]
+      summary: 編輯餐點
+      description: |
+        以餐點自身的 id 定位，不需帶 store_id——餐點的歸屬不可變更
+        （契約未提供「移動餐點到別家店」的語意）。修改本筆不連動其他店家
+        的同名餐點（FR-034）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuItemPatch' }
+      responses:
+        '200':
+          description: 已更新
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MenuItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+    delete:
+      tags: [admin]
+      summary: 刪除餐點
+      description: 僅刪除該餐點，所屬店家與其餘餐點不受影響（FR-030）。
+      responses:
+        '204':
+          description: 已刪除
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        與一般使用者完全相同的 session token（憲章原則 I：不為管理員另開
+        驗證方式）。token 內僅含 user_id，角色一律即時查資料庫，
+        故 token 中沒有可竄改的 role（research R-03）。
+
+  parameters:
+    StoreId:
+      name: store_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+    MenuItemId:
+      name: menu_item_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+    AdminSession:
+      type: object
+      required: [user_id, role]
+      properties:
+        user_id: { type: string, format: uuid }
+        display_name: { type: string, nullable: true }
+        role:
+          type: string
+          enum: [admin]
+          description: 僅可能為 admin——非管理員根本拿不到 200。
+
+    StoreInput:
+      type: object
+      required: [name, address]
+      description: |
+        欄位完全依 shared-schema-store-menu.md，不含契約以外的任何欄位。
+        座標為選填但須成對（FR-021、FR-022）。
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: 允許與其他店家重複（連鎖分店，FR-027）。
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          nullable: true
+          description: 與 longitude 必須同時有值或同時為 null。
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          nullable: true
+
+    StorePatch:
+      type: object
+      description: 部分更新；未提供的欄位維持原值。
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        address: { type: string, minLength: 1, maxLength: 500 }
+        latitude: { type: number, format: double, minimum: -90, maximum: 90, nullable: true }
+        longitude: { type: number, format: double, minimum: -180, maximum: 180, nullable: true }
+
+    Store:
+      type: object
+      required: [id, name, address, latitude, longitude, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        address: { type: string }
+        latitude:
+          type: number
+          format: double
+          nullable: true
+          description: null 代表未設定座標，該店家不會出現在第二輪依距離排序的結果中。
+        longitude: { type: number, format: double, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    StoreWithCount:
+      allOf:
+        - $ref: '#/components/schemas/Store'
+        - type: object
+          required: [menu_item_count]
+          properties:
+            menu_item_count:
+              type: integer
+              minimum: 0
+              description: |
+                該店家底下的餐點數。刪除確認提示的「將一併刪除 N 道餐點」
+                取自此欄位（FR-038）。
+
+    MenuItemInput:
+      type: object
+      required: [name, calories, protein_g, carbs_g, fat_g]
+      description: |
+        欄位名稱逐字沿用 shared-schema-store-menu.md，刻意**不加單位後綴**
+        （即使第一輪的 meal_items 用的是 calories_kcal）——契約優先於
+        內部命名一致性。
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        calories:
+          type: number
+          format: double
+          minimum: 0
+          description: 允許為 0（零卡飲料，FR-032）。
+        protein_g: { type: number, format: double, minimum: 0 }
+        carbs_g: { type: number, format: double, minimum: 0 }
+        fat_g: { type: number, format: double, minimum: 0 }
+
+    MenuItemPatch:
+      type: object
+      description: 部分更新；store_id 不可變更，故不在此。
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        calories: { type: number, format: double, minimum: 0 }
+        protein_g: { type: number, format: double, minimum: 0 }
+        carbs_g: { type: number, format: double, minimum: 0 }
+        fat_g: { type: number, format: double, minimum: 0 }
+
+    MenuItem:
+      type: object
+      required:
+        [id, store_id, name, calories, protein_g, carbs_g, fat_g, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        store_id: { type: string, format: uuid }
+        name: { type: string }
+        calories: { type: number, format: double }
+        protein_g: { type: number, format: double }
+        carbs_g: { type: number, format: double }
+        fat_g: { type: number, format: double }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ErrorBody:
+      type: object
+      description: |
+        沿用第一輪既有的統一錯誤信封（app/core/errors.py），本輪不新增
+        任何管理端專用的錯誤代碼或訊息。
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, retryable]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            retryable: { type: boolean }
+
+  responses:
+    Unauthorized:
+      description: |
+        未攜帶有效登入狀態。**未登入者得到的是 401 而非 403**——
+        不因「已登入才會看到 403」而洩漏權限體系結構（FR-016）。
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+          example:
+            error: { code: UNAUTHORIZED, message: 請重新登入。, retryable: false }
+
+    Forbidden:
+      description: |
+        ★ 全部管理端端點共用此定義（FR-015）。
+
+        一般使用者的有效登入狀態存取任一管理端端點時，回應**逐字相同**：
+        同一個 code、同一句訊息，不含端點用途、資料結構、內部路徑或任何
+        可推測後台功能的線索，呼叫方無法藉回應差異判斷哪些功能存在。
+        此請求不造成任何資料變更（FR-014）。
+
+        已知殘留：403 與 catch-all 404 的差異可推知路徑本身存在。
+        此為 spec 明列可接受的取捨（後台網址不視為機密，安全性由權限層
+        保證），詳見 research R-05。
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+          example:
+            error: { code: FORBIDDEN, message: 沒有執行此操作的權限。, retryable: false }
+
+    NotFound:
+      description: |
+        目標店家或餐點不存在（可能已被另一位管理員刪除）。
+        明確回報而非通用錯誤或靜默失敗（FR-028）。
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+          example:
+            error: { code: NOT_FOUND, message: 找不到指定的資料。, retryable: false }
+
+    ValidationError:
+      description: |
+        輸入不符規則：必填缺漏、座標未成對、座標超出範圍、營養數值為負數
+        或非數字（FR-021～FR-023、FR-032）。
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: 輸入的資料不正確，請檢查後再試。
+              retryable: false
