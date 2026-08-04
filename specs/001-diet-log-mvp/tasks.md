@@ -20,15 +20,21 @@ description: "Task list for 拍照飲食紀錄 MVP（第一輪）"
 | 階段 | 內容 | 調整依據 |
 |---|---|---|
 | Phase 2 | **全部 6 張資料表 + migration**（不只 US1 用得到的表） | 使用者指定；後續所有 UI 任務都讀寫這些表 |
-| Phase 3 | **AI 辨識服務串接（後端全段）** | 使用者指定；同時消化 OQ-1／OQ-3 的技術風險 |
+| Phase 3 | **AI 辨識服務串接（後端全段）** | 使用者指定；同時消化 OQ-1 的技術風險（OQ-3 已於 2026-08-04 確認關閉，見下方「契約更新」） |
 | Phase 4–8 | 各 user story 的功能邏輯 | 依 spec 優先序 |
 | Phase 9 | **UI 打磨與跨切面** | 使用者指定；功能邏輯跑通後才做 |
 
 ⚠️ **此排序的代價**：Phase 3 把 US2 的後端段落提前到 US1 之前，因此第一個「可展示的完整使用者流程」（US1 登入建檔）會比嚴格 MVP-first 排法晚約一個階段抵達。換來的是辨識管線的不確定性在投入大量 UI 工作前就被驗證。若你更想要早期可展示成果，把 Phase 3 移到 Phase 4 之後即可，任務內容不需改動——見「Implementation Strategy」。
 
+## ⚠️ 契約更新（2026-08-04）：辨識服務改為真實外部 API
+
+以下 Phase 3 的既有任務（T033〜T048）是依**假定契約**（[contracts/recognition-service.md](./contracts/recognition-service.md) 初版，OQ-3 未確認）完成並通過測試——這段歷史記錄保留不變。
+
+OQ-3 已於 2026-08-04 確認關閉：辨識服務改為第三方代管的「台灣小吃辨識 API」，回應格式與假定契約有實質差異（無 candidates、無 per_100g、無 message，見 [research.md](./research.md) R-16）。既有實作需要一輪遷移才能對接真實服務，任務見新增的「**Phase 3.1：契約遷移**」（T126〜T136），插在 Phase 3 與 Phase 4 之間。
+
 ## 實作進度（2026-08-03）
 
-`/speckit.implement` 執行結果：**119/125 完成**。五個 user story 全部可運作，並已對**實際運行中的服務**通過 39 項冒煙檢查。
+`/speckit.implement` 執行結果：**119/125 完成**。五個 user story 全部可運作，並已對**實際運行中的服務**（依假定契約的 stub）通過 39 項冒煙檢查。Phase 3.1 的契約遷移任務尚未執行，見上方異動說明。
 
 | Phase | 狀態 | 驗證方式 |
 |---|---|---|
@@ -68,7 +74,7 @@ frontend  npm run test               →  22 passed     eslint        → 全通
 
 ### 剩餘 6 項
 
-- **T048 / T125** —— 需真實辨識服務實測延遲以校準 OQ-1／OQ-4。stub 的 319ms 不具代表性。
+- **T048 / T125** —— 需真實辨識服務實測延遲以校準 OQ-1／OQ-4。stub 的 319ms 不具代表性；此需求已由新增的 **T139**（Phase 3.1）承接，待契約遷移完成後執行。
 - **T120 / T121** —— Playwright 端對端測試。需真 LINE channel 與 HTTPS 通道（LIFF 必需）。冒煙測試已涵蓋後端全路徑，但瀏覽器層的互動未自動化。
 - **T123** —— quickstart V1〜V10 的完整人工走查。V3〜V9 的後端路徑已由冒煙測試涵蓋；V1／V2（雙入口登入）需真實 LINE 環境。
 - **T119** —— 系統性無障礙稽核。已完成：滑桿 `aria-label`／`aria-valuetext`、Modal 的 `role="dialog"`／Escape 關閉／焦點移入／背景滾動鎖定、載入狀態 `role="status"`。**未完成**：色彩對比的量測與完整鍵盤導覽稽核。
@@ -154,7 +160,9 @@ Web app 結構（見 [plan.md](./plan.md) Structure Decision）：`backend/`、`
 
 ## Phase 3: AI 辨識服務串接（後端全段）
 
-**⭐ 使用者指定優先**：本階段整段屬 US2，但提前於 US1 之前執行。除使用者指示外，另有技術理由——辨識契約目前僅「錯誤格式」經確認（OQ-3），同步／非同步與回應時間亦未定（OQ-1），提前驗證可在投入 UI 工作前暴露落差。
+**⭐ 使用者指定優先**：本階段整段屬 US2，但提前於 US1 之前執行。除使用者指示外，另有技術理由——同步／非同步與回應時間亦未定（OQ-1），提前驗證可在投入 UI 工作前暴露落差。
+
+> 本階段的任務原依假定契約（OQ-3 未確認）撰寫並實作完成；OQ-3 已於 2026-08-04 確認關閉，實際契約與假定有實質差異，遷移任務見下方「Phase 3.1」，不在此重寫既有任務內容。
 
 **Goal**: 後端可接收照片、呼叫辨識服務、查表換算、並正確區分「未偵測到食物」與各類錯誤
 
@@ -178,6 +186,33 @@ Web app 結構（見 [plan.md](./plan.md) Structure Decision）：`backend/`、`
 - [ ] T048 [US2] 以 `recognition_jobs.duration_ms` 收集實測延遲並記錄於 [plan.md](./plan.md) OQ-1／OQ-4，判定是否需改為非同步（[research.md](./research.md) R-07 遷移評估）
 
 **Checkpoint**: 辨識管線後端完整可用且錯誤分支全數驗證——前端可安心接手
+
+---
+
+## Phase 3.1: 契約遷移——串接真實外部辨識 API（2026-08-04 新增）
+
+**Goal**: 把 Phase 3 已完成、依假定契約運作的辨識管線，改為對接已確認的真實外部服務（「台灣小吃辨識 API」），契約差異依 [research.md](./research.md) R-16 的決策全數收斂在 `recognition_client.py`
+
+**Independent Test**: 以 `curl` 直接呼叫真實服務驗證回應格式；再以更新後的 stub 走一次 [quickstart.md](./quickstart.md) V3〜V5，確認前端與對外契約（`openapi.yaml`）**不需任何改動**即可運作；`GET /api/v1/foods/search` 承接原候選改選的修正入口
+
+**前置**：[contracts/recognition-service.md](./contracts/recognition-service.md)（2026-08-04 修訂版）、research.md R-16
+
+- [ ] T126 [US2] 於 `backend/app/core/config.py` 新增 `recognition_api_key` 設定項（對應 `RECOGNITION_API_KEY`）；`recognition_service_url` 正式環境改指向 `https://taiwanese-food-api-528488788338.asia-east1.run.app`，本機／CI 維持指向 stub
+- [ ] T127 [US2] 改寫 `backend/app/services/recognition_client.py` 的 `call_recognition_service()`：URL 拼接改為 `{base}/api/detect`、multipart 欄位名由 `photo` 改為 `file`、加入 `X-API-Key` header（值取自 T126）；`401` 回應映射為 `RECOGNITION_UNAVAILABLE`（不對外揭露認證細節）
+- [ ] T128 [US2] 改寫 `backend/app/services/recognition_client.py` 的 `build_items()`：改解析新回應格式（`name`／`estimated_weight_g`／`calories`／`protein_g`／`carbs_g`／`fat_g`／`confidence`／`class_name`／`bbox`），以 `value / estimated_weight_g × 100` 反推 `per_100g` ← ★ **對前端與 `openapi.yaml` 的 `per_100g` 契約必須透明，前端不應因此變動**（R-16 決策 1）
+- [ ] T129 [US2] 於 T128 中將 `bbox` 座標由 `{x1,y1,x2,y2}` 轉換為既有 schema 的 `{x,y,width,height}`（`x=x1, y=y1, width=x2-x1, height=y2-y1`）
+- [ ] T130 [US2] 於 T128 中移除「查 `food_nutrition_references` 換算」邏輯：`food_reference_id` 一律 `null`、`nutrition_available` 除下方防禦性情況外一律 `true`、`candidates` 一律回傳空陣列 `[]`（R-16 決策 2）
+- [ ] T131 [US2] 於 T128 中加入防禦性檢查：`estimated_weight_g` 為 0／缺漏／非正數時，該品項 `per_100g = null`、`nutrition_available = false`，仍列出 `name`，不得讓整次辨識失敗
+- [ ] T132 [US2] 於 `recognition_client.py` 加入 `items: []` 時的固定中文文案合成（例如「沒有偵測到食物，請換一張再試試」），寫入 `recognition_jobs.service_message`——上游不再提供 `message` 欄位
+- [ ] T133 [P] [US2] 檢視 `backend/app/schemas/recognition.py`：確認 `Per100g`／`RecognitionItem`／`FoodCandidate` 因 R-16 決策 1、2 維持不變即可滿足新契約；若確認不需改動，僅更新相關 docstring 說明來源已改為反推值
+- [ ] T134 [US2] 改寫 `tools/recognition-stub/stub.py`：回應格式對齊真實契約（`estimated_weight_g`＋絕對值＋`bbox:{x1,y1,x2,y2}`，無 `candidates`／`message`）；模式清單改為 `normal`／`empty`／`timeout`／`error`／`unauthorized`／`garbage`／`zero_weight`（移除 `unknown_label`，新增 `unauthorized` 與 `zero_weight`）
+- [ ] T135 [P] [US2] 更新 `backend/tests/contract/test_recognition_service.py`：fixture 改用新回應格式；新增 `zero_weight`（驗證 T131 防禦邏輯）與 `unauthorized`（驗證 401 → `RECOGNITION_UNAVAILABLE`）兩組契約測試
+- [ ] T136 [P] [US2] 更新 `backend/tests/integration/test_recognitions.py` 與 `backend/tests/smoke_e2e.py` 對辨識回應內容的既有斷言，改為驗證新格式下 `per_100g` 反推值正確、`candidates` 恆空、`food_reference_id` 恆 `null`
+- [ ] T137 [US2] 檢視 `frontend/src/components/capture/RecognitionItemCard.tsx`（T080 原「候選名稱改選」邏輯）：`candidates` 恆為空陣列時是否已優雅降級（隱藏候選 UI、引導改用既有的 `GET /foods/search` 手動搜尋入口，即 T082）；若元件目前假設 `candidates` 必有值，需調整為以陣列長度判斷是否顯示候選區塊
+- [ ] T138 [P] 同步更新 `backend/.env.example`：新增 `RECOGNITION_API_KEY`，`RECOGNITION_SERVICE_URL` 註解註明正式環境的真實 base URL（[quickstart.md](./quickstart.md) 已於 plan 階段更新，此處確保範例檔一致）
+- [ ] T139 [US2] 以真實外部 API（而非 stub）實際跑一次 `POST /api/v1/recognitions` 端到端請求，記錄 `recognition_jobs.duration_ms` 作為 OQ-1／OQ-4 的**首次真實數據**（取代原 T048 的 stub 延遲 319ms，該數據依 contracts/recognition-service.md 註記為不具代表性）
+
+**Checkpoint**: 辨識管線改為真實外部 API 且既有前端／對外契約零改動；Phase 5（US2 前端）與既有測試套件可在此基礎上直接複用
 
 ---
 
@@ -355,8 +390,9 @@ Web app 結構（見 [plan.md](./plan.md) Structure Decision）：`backend/`、`
 - **Phase 1 Setup**：無依賴，可立即開始
 - **Phase 2 Foundational**：依賴 Phase 1 — **阻塞所有後續階段**
 - **Phase 3 辨識串接**：依賴 Phase 2（需要 `food_nutrition_references`、`recognition_jobs`、錯誤信封、照片儲存）
-- **Phase 4 US1**：依賴 Phase 2；**不依賴 Phase 3**（可與 Phase 3 平行）
-- **Phase 5 US2**：依賴 Phase 3（辨識後端）+ Phase 4（登入）
+- **Phase 3.1 契約遷移**：依賴 Phase 3（改寫其產出的 `recognition_client.py`／stub／測試），**不依賴** Phase 4；可視為 Phase 3 的延伸，插在 Phase 3 與 Phase 4 之間執行，或與 Phase 4 平行
+- **Phase 4 US1**：依賴 Phase 2；**不依賴 Phase 3／3.1**（可與 Phase 3／3.1 平行）
+- **Phase 5 US2**：依賴 Phase 3（辨識後端）＋ Phase 3.1（真實契約，前端才會消費到真實資料而非 stub 假定格式）+ Phase 4（登入）
 - **Phase 6 US3**：依賴 Phase 2 + Phase 4；有 US2 的紀錄資料時展示效果較完整
 - **Phase 7 US4**：依賴 Phase 2 + Phase 4
 - **Phase 8 US5**：依賴 Phase 5（紀錄需先能建立）+ Phase 6（編輯入口在紀錄清單上）
@@ -377,6 +413,7 @@ Web app 結構（見 [plan.md](./plan.md) Structure Decision）：`backend/`、`
 | Phase 1 | T002–T005、T007–T008 |
 | Phase 2 | **T010–T015（6 張 model 可同時寫）**；T020–T021、T023–T026、T028–T029；T030–T032 |
 | Phase 3 | T036、T045、T046–T047 |
+| Phase 3.1 | T133、T135–T136、T138 |
 | Phase 4 | T055、T057；T066–T067；**後端（T049–T057）與前端（T058–T065）可由兩人分工** |
 | Phase 5 | T068、T070–T072、T076、T089 |
 | Phase 6 | **T092–T095（四個獨立元件）** |
@@ -427,7 +464,7 @@ Task: "實作日期切換條於 frontend/src/components/dashboard/DateStrip.tsx"
 
 ### 若改採嚴格 MVP-First
 
-把 **Phase 3 移到 Phase 4 之後**即可，任務內容完全不需修改：Phase 1 → 2 → 4（US1，可展示）→ 3 → 5 → …。代價是辨識管線的不確定性（OQ-1／OQ-3）要到較晚才會暴露。
+把 **Phase 3（+3.1）移到 Phase 4 之後**即可，任務內容完全不需修改：Phase 1 → 2 → 4（US1，可展示）→ 3 → 3.1 → 5 → …。代價是辨識管線的不確定性（OQ-1，回應時間 p95）要到較晚才會暴露。
 
 **建議折衷**：兩人以上團隊直接讓 Phase 3 與 Phase 4 平行——兩者互不依賴，既前置了風險，也不延後 MVP。
 
@@ -449,7 +486,8 @@ Task: "實作日期切換條於 frontend/src/components/dashboard/DateStrip.tsx"
 - `[P]` = 不同檔案、無未完成依賴，可平行
 - `[Story]` 標籤對應 spec.md 的 user story，供追溯
 - ★ 標記的任務承載不可妥協的需求或憲章原則，偏離會導致返工——實作前請先讀對應的 research.md 章節
-- Phase 3 的任務雖標 `[US2]`，但刻意提前執行（使用者指定 + 技術風險前置）
+- Phase 3／3.1 的任務雖標 `[US2]`，但刻意提前執行（使用者指定 + 技術風險前置）
 - 每個任務或邏輯群組完成後即 commit
 - 任一 Checkpoint 皆可停下獨立驗收
-- 阻塞中的 open questions（OQ-1、OQ-2、OQ-3、OQ-7）需在對應任務開始前確認：OQ-2／OQ-7 影響 T011／T012／T019，OQ-1／OQ-3 影響 T034／T040
+- 阻塞中的 open questions（OQ-1、OQ-2、OQ-7、OQ-9）需在對應任務開始前確認：OQ-2／OQ-7 影響 T011／T012／T019，OQ-1 影響 T139／T125，OQ-9（金鑰輪替流程）影響 T126 的正式環境部署
+- **OQ-3 已於 2026-08-04 確認關閉**（見 [contracts/recognition-service.md](./contracts/recognition-service.md)、research.md R-16），原本因 OQ-3 而標為「假定」的 T034／T037／T039 等任務內容已由 Phase 3.1（T126〜T139）承接遷移；Phase 3 的原始任務記錄保留不變，作為「依假定契約完成」的歷史紀錄
