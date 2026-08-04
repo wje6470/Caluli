@@ -11,7 +11,8 @@ info:
     - 辨識端點採資源導向，回應永遠是一個 recognition 資源並帶 status，
       使未來由同步改為非同步時不需破壞契約（見 research.md R-07）。
     - 辨識品項回應必須包含 per_100g 原始值，前端才能在不呼叫後端的情況下
-      即時重算份量（見 research.md R-09）。
+      即時重算份量（見 research.md R-09）。實際串接的外部辨識服務不提供
+      per_100g，此值由後端 adapter 反推得出，對此契約透明（見 research.md R-16）。
 servers:
   - url: /api/v1
 tags:
@@ -152,7 +153,7 @@ paths:
       tags: [recognition]
       summary: 上傳照片並取得辨識結果
       description: |
-        本輪為同步實作：後端呼叫同機辨識服務並等待結果，於同一回應回傳。
+        本輪為同步實作：後端呼叫外部代管的辨識服務（台灣小吃辨識 API）並等待結果，於同一回應回傳。
         回應仍採資源形狀（含 id 與 status），未來改為非同步時可直接回 202 +
         status="processing"，前端輪詢 GET /recognitions/{id}，契約不需破壞性變更。
 
@@ -466,6 +467,8 @@ components:
         每 100 公克的原始營養值。前端據此以
         value = per_100g × portion_grams / 100 即時重算，不再呼叫後端（R-09）。
         **此欄位為必要，移除將使份量即時調整無法運作。**
+        本輪由後端 adapter 從辨識服務回傳的絕對值反推得出（research.md R-16），
+        對前端契約透明。
       required: [calories_kcal, protein_g, carbs_g, fat_g]
       properties:
         calories_kcal: { type: number }
@@ -475,7 +478,10 @@ components:
 
     FoodCandidate:
       type: object
-      description: HF 分類模型的 Top-K 候選之一，依信心度排序（FR-035）
+      description: |
+        分類模型的 Top-K 候選之一，依信心度排序（FR-035）。
+        本輪實際串接的辨識服務不提供候選清單，此陣列恆為空；
+        修正名稱改由 GET /foods/search 承接（research.md R-16）。
       required: [name, confidence]
       properties:
         food_reference_id:
@@ -526,11 +532,16 @@ components:
         nutrition_available:
           type: boolean
           description: |
-            false 代表該食物在通用食物營養對照表中查無資料，
-            前端須標示無法自動換算並允許使用者自行填入或移除（FR-037）。
+            辨識路徑下恆為 true（外部辨識服務保證每個回傳品項皆含營養值），
+            僅在防禦性檢查失敗時（例如服務回傳的估計份量為 0，無法反推
+            per_100g）設為 false；前端須標示無法自動換算並允許使用者自行
+            填入或移除（FR-037，research.md R-16）。
         candidates:
           type: array
-          description: 其他候選名稱，供使用者改選（FR-035）
+          description: |
+            其他候選名稱，供使用者改選（FR-035）。本輪實際串接的辨識服務
+            不提供候選清單，恆為空陣列；前端無候選時應引導改用
+            GET /foods/search 手動搜尋。
           items: { $ref: "#/components/schemas/FoodCandidate" }
         bounding_box:
           oneOf:
@@ -563,8 +574,9 @@ components:
             - { type: string }
             - { type: "null" }
           description: |
-            辨識服務回傳的說明訊息，原樣保留。
             items 為空時前端須顯示此訊息，例如「沒有偵測到食物，請換一張再試試」。
+            外部辨識服務本身不提供此欄位，由後端 adapter 合成固定文案
+            （research.md R-16）。
         retry_count: { type: integer }
         requested_at: { type: string, format: date-time }
         completed_at:

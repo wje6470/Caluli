@@ -129,6 +129,8 @@
 
 **⚠️ 此為待確認假設（OQ-1）**：實際呼叫方式與回應時間未定。若實測 p95 超過約 10 秒，同步等待會讓 HTTP 連線長時間佔用並惡化使用者感受，屆時應執行上述遷移。
 
+**2026-08-04 更新**：R-16 確認辨識服務為第三方代管雲端服務（非同機部署），本節「同機低延遲」的隱含前提已不成立——p95 實測必須涵蓋公網往返延遲，30 秒逾時門檻的合理性需重新以外部服務的實測回應時間校準（OQ-4 隨之延續，不可視為已解決）。上述非同步遷移的契約影響評估結論不變。
+
 **Alternatives considered**:
 
 - 直接實作非同步輪詢：在回應時間未知的前提下，先付出輪詢的複雜度（job 狀態管理、輪詢節流、前端重試）卻不確定是否需要，違反憲章「Start simple」與 brief 的指示。
@@ -166,22 +168,24 @@
 
 ## R-09: 份量即時換算放在前端
 
-**Decision**: 換算完全在前端執行，不呼叫後端。為此，辨識 API 的每個品項**必須回傳每 100g 的原始營養值**與預設份量：
+**Decision**: 換算完全在前端執行，不呼叫後端。為此，`GET /recognitions` 系列端點回應的每個品項**必須包含每 100g 的原始營養值**（`per_100g`）與初始估計份量（`default_portion_grams`）：
 
 ```jsonc
 {
-  "food_reference_id": "...",
+  "food_reference_id": null,
   "name": "滷肉飯",
   "confidence": 0.93,
-  "candidates": [ {"name": "滷肉飯", "confidence": 0.93}, {"name": "焢肉飯", "confidence": 0.05} ],
+  "candidates": [],
   "default_portion_grams": 250,
-  "per_100g": { "calories_kcal": 187, "protein_g": 6.2, "carbs_g": 26.1, "fat_g": 6.5 }
+  "per_100g": { "calories_kcal": 214, "protein_g": 8.0, "carbs_g": 24.0, "fat_g": 9.0 }
 }
 ```
 
 前端以 `value = per_100g[key] * grams / 100` 即時計算，顯示時四捨五入至整數（熱量）與一位小數（三大營養素）。**儲存時前端送出的是使用者確認後的份量與換算結果，後端以同一公式重新驗算**，差異超過容忍值即以後端計算值為準。
 
 **Rationale**: brief 明確指示換算在前端做（公式簡單）。SC-003 要求 0.3 秒內更新，任何網路往返都無法穩定達成。後端重新驗算是必要的防線——前端送來的數值不可信，且能防止四捨五入誤差累積進歷史資料。回傳 `per_100g` 是這個決策的**必要條件**，也是本輪 API 契約中最容易被忽略而導致返工的一點。
+
+**2026-08-04 更新**：本輪實際串接的外部辨識 API（R-16）**不提供** `per_100g`，只提供該估計份量下的絕對值（`calories`／`protein_g`／`carbs_g`／`fat_g`）與 `estimated_weight_g`。本決策的「必要條件」改由 `recognition_client.build_items()` 在 adapter 內以 `per_100g[key] = raw[key] / estimated_weight_g × 100` **反推**得出，繼續維持對前端與 `openapi.yaml` 一致的 `per_100g` 形狀——前端 `lib/nutrition.ts`／`PortionSlider` 不需任何改動。`candidates` 因新服務不提供 Top-K，一律回傳空陣列；`food_reference_id` 因不再依賴內部對照表換算，一律為 `null`。
 
 **Alternatives considered**:
 
@@ -220,6 +224,8 @@
 
 - 品項只存 `food_reference_id`，營養值即時 join：資料較「正規化」，但如上所述會讓歷史資料失去不可變性。
 - 快照存整份 reference 的 JSON：欄位固定且少，攤平為具名欄位可查詢性更好。
+
+**2026-08-04 更新**：外部辨識 API（R-16）串接後，來自辨識流程的 `meal_items.food_reference_id` 一律為 `NULL`——新服務的營養值已由其自身提供，不再透過 `model_label` 查 `food_nutrition_references` 換算，兩者之間不再有辨識路徑上的關聯。`food_reference_id` 目前僅在使用者經由 `GET /foods/search`（FR-037 手動修正）選定品項時才會被寫入。快照機制（本節決策 2）不受影響，`food_nutrition_references` 的獨立資料表地位（本節決策 1、憲章原則 V）亦不受影響。
 
 ---
 
@@ -291,7 +297,9 @@
 
 憲章要求的兩類必測情境明確對應：「一般使用者存取管理端 API 被拒絕」→ 後端單元 + 整合；「非 LIFF 環境可完成登入流程」→ 前端單元（`liff.init()` 失敗即降級）+ Playwright（一般瀏覽器走 OAuth）。
 
-**Rationale**: 辨識服務的真實介面尚未確定（OQ-3），可切換模式的 stub 讓錯誤處理路徑在真服務就緒前就能完整驗證——這正是本輪需求密度最高、最容易漏測的區塊。testcontainers 讓整合測試跑在真 PostgreSQL 上，避免 SQLite 與 PostgreSQL 的行為差異（`TIMESTAMPTZ`、`NUMERIC` 精度）在上線後才暴露。
+**Rationale**: 可切換模式的 stub 讓錯誤處理路徑不需依賴外部服務即可完整驗證，且不消耗真實 API 的金鑰額度——這正是本輪需求密度最高、最容易漏測的區塊。testcontainers 讓整合測試跑在真 PostgreSQL 上，避免 SQLite 與 PostgreSQL 的行為差異（`TIMESTAMPTZ`、`NUMERIC` 精度）在上線後才暴露。
+
+**2026-08-04 更新**：辨識服務的真實介面已於 R-16 確認（OQ-3 關閉），stub 的模式定義已對齊真實契約格式（見 [contracts/recognition-service.md](./contracts/recognition-service.md)「本機開發用 Stub」）。
 
 **Alternatives considered**:
 
@@ -301,15 +309,44 @@
 
 ---
 
+## R-16: 辨識服務改為外部代管 API（台灣小吃辨識 API）串接
+
+**Decision**: 辨識服務由「假定的同機內部服務」正式改為串接第三方代管的雲端 API（`https://taiwanese-food-api-528488788338.asia-east1.run.app/api/detect`，`X-API-Key` 認證）。完整契約見 [contracts/recognition-service.md](./contracts/recognition-service.md)。本節記錄該契約帶來的三項關鍵技術決策：
+
+**1. 反推 `per_100g`，收斂於 adapter 層**：新服務回傳的是該估計份量下的絕對營養值 + `estimated_weight_g`，不是 `per_100g`。決定由 `recognition_client.build_items()` 以 `per_100g[key] = raw[key] / estimated_weight_g × 100` 反推，維持對前端與 `openapi.yaml` 既有的 `per_100g` 契約形狀不變（詳見 R-09 的 2026-08-04 更新）。
+
+**理由**：`services/recognition_client.py` 是 OQ-3 當初唯一設計的變更隔離點（見 spec 的原始契約文件），把契約差異全部吸收在這一層，前端 `PortionSlider`／`lib/nutrition.ts`／`useRecognition.ts` 與 `contracts/openapi.yaml` 完全不需改動——這正是當初預留該隔離層的目的得到驗證的時刻。
+
+**已否決的替代方案**：讓前端改為消費 `estimated_weight_g` + 絕對值、自行反推單位值。理由：會同時觸及 `PortionSlider` 元件與 `lib/nutrition.ts` 的計算邏輯，且需要前後端各自實作一次等價公式（重新驗算仍在後端），徒增不一致風險，且違背「契約差異只改一個檔案」的既有設計意圖。
+
+**2. `food_reference_id` 與 `food_nutrition_references` 解耦**：辨識路徑產生的品項一律 `food_reference_id = null`（見 R-11 的 2026-08-04 更新）。`food_nutrition_references` 資料表**不廢除**，改為僅供 `GET /foods/search`（FR-037 手動修正食物名稱）使用，與辨識流程本身脫鉤。憲章原則 V（通用食物對照表獨立、不與店家資料共用）不受影響——這條原則本就未預設對照表的唯一用途是「辨識查表」。
+
+**3. 金鑰管理**：`X-API-Key` 存於後端環境變數（暫定 `RECOGNITION_API_KEY`），比照 `LINE_CHANNEL_SECRET` 的既有管理方式（`.env` 本機、正式環境的 secret 管理機制，不進版本控制）。錯誤處理時（`RecognitionServiceError`）不得將金鑰或原始 header 內容寫入對外錯誤訊息或一般 log；`401` 一律對外呈現為 `RECOGNITION_UNAVAILABLE`（服務暫時不可用），不區分是金鑰問題還是服務端問題，避免向使用者或潛在攻擊者洩漏認證細節。金鑰輪替本輪不建立自動化機制（單一固定金鑰、25 人規模），輪替時需同步更新環境變數並重啟服務，記錄於部署手冊（quickstart.md）。
+
+**連帶影響**：
+
+- **R-07（同步呼叫）**：「同機低延遲」前提不再成立，OQ-1／OQ-4 的實測需涵蓋公網延遲，見 R-07 的 2026-08-04 更新。
+- **R-08（錯誤分類）**：情境對照表新增「`401` 認證失敗 → `RECOGNITION_UNAVAILABLE`」一列，見 [contracts/recognition-service.md](./contracts/recognition-service.md) 情境對照表；其餘錯誤分類（逾時／5xx／連線失敗／解析失敗）語意不變。
+- **R-09（份量即時換算）**：per_100g 反推，見上方決策 1。
+- **R-11（資料表分離與快照）**：`food_reference_id` 解耦，見上方決策 2；`meal_items` 快照機制本身不受影響。
+
+**Alternatives considered**:
+
+- 維持假定契約、待模型端自建同機服務就緒後再串接：會讓辨識功能無限期停留在 stub 階段，且已取得可用的真實 API，沒有理由延後驗證。
+- 前端直接呼叫外部辨識 API（略過後端）：違反憲章原則 III（單一後端）與原則 I 的驗證收斂精神，且會讓 `X-API-Key` 暴露於客戶端。
+
+---
+
 ## Open Questions（帶入 plan.md 追蹤）
 
 | ID | 問題 | 現行假設 | 影響 | 需在何時決定 |
 |---|---|---|---|---|
-| OQ-1 | 辨識服務為同步或非同步？回應時間 p95 為何？ | 同步，逾時 30s | 見 R-07 遷移評估；若 p95 > 10s 應改非同步 | 實作辨識串接前 |
-| OQ-2 | 通用食物營養對照表的資料來源與涵蓋範圍 | 本輪自建，需涵蓋模型所有輸出類別 | 直接決定本輪工作量；資料缺漏會讓辨識結果無法換算 | 資料表建立前 |
-| OQ-3 | 辨識服務的實際 HTTP 介面（URL、method、請求格式、成功回應完整欄位；是否回傳 Top-K 候選與 bbox） | 依 [contracts/recognition-service.md](./contracts/recognition-service.md) 的假定契約 | 假定與實際不符時需改 adapter 層（已隔離，影響可控） | 實作辨識串接前 |
-| OQ-4 | 逾時門檻 30 秒是否合適 | 30s | 過短會誤判正常回應為逾時 | 取得 OQ-1 實測後 |
+| OQ-1 | 辨識服務為同步或非同步？回應時間 p95 為何？ | 同步，逾時 30s；p95 待實測（**須涵蓋外部服務公網延遲，見 R-16**） | 見 R-07 遷移評估；若 p95 > 10s 應改非同步 | 實作辨識串接前 |
+| OQ-2 | 通用食物營養對照表的資料來源與涵蓋範圍 | 本輪自建，供 FR-037 手動搜尋使用（**不再是辨識結果換算的必經路徑，見 R-16**） | 直接決定本輪工作量 | 資料表建立前 |
+| ~~OQ-3~~ | ~~辨識服務的實際 HTTP 介面~~ | **已確認關閉（2026-08-04）**：見 [contracts/recognition-service.md](./contracts/recognition-service.md)、R-16 | — | 已解決 |
+| OQ-4 | 逾時門檻 30 秒是否合適 | 30s，**需依外部服務實測回應時間重新校準（見 R-07 更新）** | 過短會誤判正常回應為逾時 | 取得 OQ-1 實測後 |
 | OQ-5 | 照片保留期限與刪除政策 | 刪除紀錄時同步刪除照片 | 個資合規 | 上線前 |
 | OQ-6 | LINE 官方帳號 Rich Menu 分流方式（同一前端不同路由 vs 兩組 LIFF） | 本輪不決定 | 不影響本輪實作 | 第二輪（推薦餐廳）plan |
 | OQ-7 | 個人健康檔案是否納入「性別」欄位 | 納入（BMR 公式所需） | 不納入則需改用不需性別的估算式，精確度下降 | 資料表建立前 |
 | OQ-8 | 年齡以「歲數」或「出生日期」儲存 | 歲數（與 prototype 一致） | 歲數會隨時間失準，需使用者自行更新 | 資料表建立前 |
+| OQ-9 | `RECOGNITION_API_KEY` 的正式環境輪替流程 | 本輪僅手動輪替並更新環境變數，無自動化機制 | 金鑰外洩時的應變速度 | 上線前 |

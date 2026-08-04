@@ -88,7 +88,9 @@ food_nutrition_references  ← 獨立資料集，與未來的店家／餐點資�
 
 ## food_nutrition_references
 
-拍照辨識用的通用食物營養對照表。**獨立資料集**。
+通用食物營養對照表。**獨立資料集**。
+
+**2026-08-04 更新**：辨識服務改為串接外部「台灣小吃辨識 API」後（見 [research.md](./research.md) R-16），此表**不再是辨識結果換算營養值的必經路徑**——外部服務直接回傳該品項的熱量與三大營養素。此表現在的用途改為供 `GET /foods/search`（FR-037 使用者手動搜尋修正食物名稱）使用，與辨識流程解耦。表結構本身不變，`model_label` 欄位保留供未來其他辨識來源沿用，但本輪辨識路徑不再以此欄位查表。
 
 | 欄位 | 型別 | 約束 | 說明 |
 |---|---|---|---|
@@ -109,7 +111,8 @@ food_nutrition_references  ← 獨立資料集，與未來的店家／餐點資�
 
 **驗證規則**
 
-- `model_label` 必須涵蓋辨識模型的所有輸出類別；缺漏時該品項無法自動換算，走 FR-037 的「查無資料」路徑。
+- `name_normalized` 需可涵蓋常見的使用者手動修正搜尋情境；查無資料時該品項走 FR-037 的「無法自動換算」路徑。
+- `model_label` 為既有欄位，本輪辨識路徑不使用，保留供未來可能的其他辨識來源沿用；不因此輪不使用而移除欄位或放寬 UNIQUE 約束。
 - 本輪透過 seed 腳本匯入，**不提供維護 API**（管理員後台屬第二輪）。
 
 **⚠️ 禁止事項**：此表不得與任何店家／餐點資料表建立外鍵、不得被後續輪次改造為共用表。
@@ -150,7 +153,7 @@ food_nutrition_references  ← 獨立資料集，與未來的店家／餐點資�
 |---|---|---|---|
 | `id` | UUID | PK | |
 | `meal_record_id` | UUID | NOT NULL, FK → `meal_records(id)` ON DELETE CASCADE | |
-| `food_reference_id` | UUID | NULL, FK → `food_nutrition_references(id)` ON DELETE SET NULL | 僅供來源追溯；NULL = 使用者自行輸入的品項（FR-037） |
+| `food_reference_id` | UUID | NULL, FK → `food_nutrition_references(id)` ON DELETE SET NULL | 僅供來源追溯；NULL = 使用者自行輸入的品項，或來自辨識流程的品項（本輪辨識服務不再經由此表換算，見 R-16，故辨識產生的品項一律為 NULL）（FR-037） |
 | `display_order` | SMALLINT | NOT NULL, default 0 | 維持辨識結果的呈現順序 |
 | `food_name` | TEXT | NOT NULL | 名稱快照（使用者可能已修改） |
 | `default_portion_grams` | NUMERIC(6,1) | NULL | 系統原本套用的預設份量，供分析「使用者調整幅度」 |
@@ -197,10 +200,10 @@ expected = per_100g_value × portion_grams / 100
 | `completed_at` | TIMESTAMPTZ | NULL | |
 | `duration_ms` | INTEGER | NULL | 供 OQ-1／OQ-4 的實測依據 |
 | `item_count` | SMALLINT | NULL | 0 代表未偵測到食物（非錯誤） |
-| `service_message` | TEXT | NULL | 辨識服務回傳的 `message`，原樣保留供前端顯示 |
+| `service_message` | TEXT | NULL | 空結果時顯示於引導畫面的說明文字；外部辨識服務不提供此欄位，由後端 adapter 合成固定文案寫入（見 [contracts/recognition-service.md](./contracts/recognition-service.md)） |
 | `error_code` | TEXT | NULL | `TIMEOUT` / `UNAVAILABLE` / `BAD_RESPONSE` |
 | `retry_count` | SMALLINT | NOT NULL, default 0 | 使用者顯式重試次數 |
-| `raw_response` | JSONB | NULL | 辨識服務原始回應，供除錯與 OQ-3 比對 |
+| `raw_response` | JSONB | NULL | 辨識服務原始回應（`{items: [...]}`，欄位含 `estimated_weight_g`／絕對營養值／`bbox: {x1,y1,x2,y2}`），供除錯與稽核 |
 | `created_at` | TIMESTAMPTZ | NOT NULL | |
 
 **索引**：`INDEX (user_id, requested_at DESC)`
@@ -228,8 +231,7 @@ expected = per_100g_value × portion_grams / 100
 |---|---|---|
 | 儀表板（單日） | `meal_records` JOIN `meal_items` WHERE `user_id` AND `record_date` = ? | `(user_id, record_date)` |
 | 趨勢（7/14/30 天） | 同上，`record_date BETWEEN ? AND ?`，依 `record_date` 分組聚合 | `(user_id, record_date)` |
-| 食物名稱搜尋 | `food_nutrition_references` WHERE `name_normalized ILIKE ?` AND `is_active` | `(name_normalized)` |
-| 辨識結果查表 | `food_nutrition_references` WHERE `model_label` = ? | `UNIQUE (model_label)` |
+| 食物名稱搜尋（FR-037 手動修正） | `food_nutrition_references` WHERE `name_normalized ILIKE ?` AND `is_active` | `(name_normalized)` |
 
 趨勢查詢中「沒有紀錄的日期以零呈現」（FR-054）由**後端補齊日期序列**，不依賴資料庫產生空列——查詢回傳有資料的日期，服務層以完整日期區間填 0。
 
