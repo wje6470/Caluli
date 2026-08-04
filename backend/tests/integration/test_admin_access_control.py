@@ -47,6 +47,12 @@ from app.main import app
 # 查詢之後，等同向未授權者洩漏了「這筆資料不存在」）。
 ADMIN_ENDPOINTS: list[tuple[str, str]] = [
     ("GET", "/api/v1/admin/me"),
+    # US2 店家維護
+    ("GET", "/api/v1/admin/stores"),
+    ("POST", "/api/v1/admin/stores"),
+    ("GET", "/api/v1/admin/stores/{id}"),
+    ("PATCH", "/api/v1/admin/stores/{id}"),
+    ("DELETE", "/api/v1/admin/stores/{id}"),
 ]
 
 GENERAL_SUB = "U11111111111111111111111111111111"

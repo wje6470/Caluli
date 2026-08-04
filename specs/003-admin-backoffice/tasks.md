@@ -58,11 +58,11 @@ Web app 結構（沿用第一輪）：後端 `backend/app/`、`backend/tests/`�
 
 - [x] T003 [P] 在 `backend/app/core/config.py` 的 `Settings` 新增 `admin_line_user_ids: str = ""`（逗號分隔字串，非 JSON 陣列）與 `admin_line_user_id_set` property，property 需 `strip()` 每個元素並過濾空字串後回傳 `frozenset[str]`。理由見 [research.md R-04](./research.md#r-04管理員名單的環境變數格式)。
 - [x] T004 [P] 在 `backend/.env.example` 補上 `ADMIN_LINE_USER_IDS=`，附註格式為逗號分隔、留空代表無人是管理員、正式環境須以加密環境變數設定且不得提交進版控。
-- [ ] T005 [P] 建立 `backend/app/db/models/store.py`：`Store(Base, TimestampMixin)`，`__tablename__ = "stores"`，欄位 `id`／`name`／`address`／`latitude`／`longitude` 依 [data-model.md](./data-model.md) 的型別與可空性；加上三條 CHECK：`ck_stores_coords_paired`（`(latitude IS NULL) = (longitude IS NULL)`）、`ck_stores_latitude_range`、`ck_stores_longitude_range`。**不加 UNIQUE 於 name**（FR-027）。
-- [ ] T006 [P] 建立 `backend/app/db/models/menu_item.py`：`MenuItem(Base, TimestampMixin)`，`__tablename__ = "menu_items"`，`store_id` 為 `ForeignKey("stores.id", ondelete="CASCADE")` 且 `nullable=False`；`calories`／`protein_g`／`carbs_g`／`fat_g` 四者型別為 `Mapped[Decimal | None]`（**nullable，T002 定案**），四者皆加 `CHECK >= 0`（PostgreSQL 的 CHECK 對 NULL 求值為 UNKNOWN 而不拒絕，故不需額外寫 `IS NULL OR`）。在檔案 docstring 明確標註兩件事：（a）本類別與既有 `MealItem` 的語意差異與「兩者無任何關聯」；（b）**空值＝店家未提供、0＝確實為零，寫入時不得以 0 代替空值**。
-- [ ] T007 在 `backend/app/db/models/__init__.py` 匯入並加入 `__all__`：`Store`、`MenuItem`（供 Alembic autogenerate 掃描）。依賴 T005、T006。
-- [ ] T008 建立 `backend/alembic/versions/20260804_0002_stores_menu_items.py`：`revision = "0002"`、`down_revision = "0001"`；`upgrade()` 僅含 `create_table("stores")`、`create_table("menu_items")` 與 `create_index("ix_menu_items_store", "menu_items", ["store_id"])`，**不得含任何 `alter_table`**（FR-043）；`menu_items.store_id` 的外鍵須明確標註 `ondelete="CASCADE"`；`downgrade()` 反向 drop。依 [research.md R-12](./research.md#r-12migration-的版次與命名) 在 docstring 內寫入憲章原則 V 稽核紀錄（內容見 [data-model.md](./data-model.md) 的「憲章原則 V 稽核」一節）。依賴 T002、T007。
-- [ ] T009 執行 `cd backend && alembic upgrade head`，並以 `\d stores`、`\d menu_items` 驗證：`stores` 有 3 條 CHECK、`menu_items` 的 `store_id` 標註 `ON DELETE CASCADE`、`ix_menu_items_store` 索引存在。依賴 T008。
+- [x] T005 [P] 建立 `backend/app/db/models/store.py`：`Store(Base, TimestampMixin)`，`__tablename__ = "stores"`，欄位 `id`／`name`／`address`／`latitude`／`longitude` 依 [data-model.md](./data-model.md) 的型別與可空性；加上三條 CHECK：`ck_stores_coords_paired`（`(latitude IS NULL) = (longitude IS NULL)`）、`ck_stores_latitude_range`、`ck_stores_longitude_range`。**不加 UNIQUE 於 name**（FR-027）。
+- [x] T006 [P] 建立 `backend/app/db/models/menu_item.py`：`MenuItem(Base, TimestampMixin)`，`__tablename__ = "menu_items"`，`store_id` 為 `ForeignKey("stores.id", ondelete="CASCADE")` 且 `nullable=False`；`calories`／`protein_g`／`carbs_g`／`fat_g` 四者型別為 `Mapped[Decimal | None]`（**nullable，T002 定案**），四者皆加 `CHECK >= 0`（PostgreSQL 的 CHECK 對 NULL 求值為 UNKNOWN 而不拒絕，故不需額外寫 `IS NULL OR`）。在檔案 docstring 明確標註兩件事：（a）本類別與既有 `MealItem` 的語意差異與「兩者無任何關聯」；（b）**空值＝店家未提供、0＝確實為零，寫入時不得以 0 代替空值**。
+- [x] T007 在 `backend/app/db/models/__init__.py` 匯入並加入 `__all__`：`Store`、`MenuItem`（供 Alembic autogenerate 掃描）。依賴 T005、T006。
+- [x] T008 建立 `backend/alembic/versions/20260804_0002_stores_menu_items.py`：`revision = "0002"`、`down_revision = "0001"`；`upgrade()` 僅含 `create_table("stores")`、`create_table("menu_items")` 與 `create_index("ix_menu_items_store", "menu_items", ["store_id"])`，**不得含任何 `alter_table`**（FR-043）；`menu_items.store_id` 的外鍵須明確標註 `ondelete="CASCADE"`；`downgrade()` 反向 drop。依 [research.md R-12](./research.md#r-12migration-的版次與命名) 在 docstring 內寫入憲章原則 V 稽核紀錄（內容見 [data-model.md](./data-model.md) 的「憲章原則 V 稽核」一節）。依賴 T002、T007。
+- [x] T009 執行 `cd backend && alembic upgrade head`，並以 `\d stores`、`\d menu_items` 驗證：`stores` 有 3 條 CHECK、`menu_items` 的 `store_id` 標註 `ON DELETE CASCADE`、`ix_menu_items_store` 索引存在。依賴 T008。
 
 **Checkpoint**: 資料表就緒、設定就緒 → user story 可開始。US1 不依賴 T005～T009，急於取得 MVP 時可與其並行。
 
@@ -102,18 +102,18 @@ Web app 結構（沿用第一輪）：後端 `backend/app/`、`backend/tests/`�
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T018 [P] [US2] 建立 `backend/tests/integration/test_admin_stores.py`：涵蓋 CRUD 正常流程，以及四項邊界——名稱留空→422；**只填緯度不填經度→422**（FR-022）；**緯度填 91→422**（FR-023）；名稱與既有店家重複但地址不同→201 成功（FR-027）；對已刪除的店家執行編輯→404（FR-028）。
+- [x] T018 [P] [US2] 建立 `backend/tests/integration/test_admin_stores.py`：涵蓋 CRUD 正常流程，以及四項邊界——名稱留空→422；**只填緯度不填經度→422**（FR-022）；**緯度填 91→422**（FR-023）；名稱與既有店家重複但地址不同→201 成功（FR-027）；對已刪除的店家執行編輯→404（FR-028）。
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] 建立 `backend/app/schemas/admin.py`：`StoreInput`／`StorePatch`／`StoreOut`／`StoreWithCountOut`，欄位依 [contracts/admin-api.yaml](./contracts/admin-api.yaml)。以 pydantic `model_validator` 實作**座標成對驗證**——`StorePatch` 須以「套用更新後的最終狀態」判定，而非只看本次請求帶了哪些欄位（FR-022）。緯經度範圍以 `Field(ge=..., le=...)` 約束（FR-023）。錯誤訊息為可直接呈現的中文。
-- [ ] T020 [US2] 建立 `backend/app/services/admin_stores.py`（**檔名刻意不用 `stores.py`**——第二輪已規劃 `services/stores.py` 存放讀取查詢管線，同名會在合併時硬衝突）：實作 `list_stores()`（以 `LEFT OUTER JOIN + GROUP BY` 一次帶出每筆的 `menu_item_count`，[research.md R-08](./research.md#r-08刪除前如何取得將一併刪除的餐點數量)）、`get_store()`、`create_store()`、`update_store()`、`delete_store()`。查無資料一律 `raise AppError("NOT_FOUND")`。依賴 T005、T019。
-- [ ] T021 [US2] 建立 `backend/app/api/v1/admin_stores.py`：`APIRouter(prefix="/admin/stores", tags=["admin"], dependencies=[Depends(require_admin)])`，實作 `GET /`、`POST /`、`GET /{store_id}`、`PATCH /{store_id}`、`DELETE /{store_id}`（204 無回應體）。並於 `backend/app/main.py` 掛載。依賴 T020。
-- [ ] T022 [P] [US2] 在 `frontend/src/lib/api/types.ts` 新增 `Store`／`StoreWithCount`／`StoreInput` 型別，在 `frontend/src/lib/api/endpoints.ts` 新增 `adminApi.stores` 的 list／create／get／update／remove。路徑以 `/admin/stores...` 起始，沿用既有 `NEXT_PUBLIC_API_BASE_URL`（已含 `/api/v1`），**不新增第二個 base URL 環境變數**（[research.md R-01](./research.md#r-01管理端-api-的路由前綴)）。
-- [ ] T023 [US2] 建立 `frontend/src/app/admin/page.tsx`：以原生 `<table>` 呈現店家清單（名稱／地址／座標狀態／餐點數／操作），沿用既有 TanStack Query。**不引入任何 UI 元件庫、表格庫或表單庫**（[research.md R-13](./research.md#r-13後台介面的技術選擇)）。依賴 T016、T022。
-- [ ] T024 [US2] 建立 `frontend/src/components/admin/StoreForm.tsx`：名稱／地址／緯度／經度四個欄位的新增與編輯表單，以既有 `frontend/src/components/ui/Modal.tsx` 呈現。前端亦需擋下「只填單一座標值」，錯誤訊息與後端一致。
-- [ ] T025 [US2] 在店家清單實作**未設定座標的明確標示**（FR-025、SC-009）：`latitude` 為 null 的列顯示可一眼辨識的標記，並附說明「未設定座標，不會出現在使用者端的附近店家推薦中」。管理員無需開啟個別店家即可辨識待補資料。修改 `frontend/src/app/admin/page.tsx`。
-- [ ] T026 [US2] 在 `StoreForm.tsx` 的座標欄位旁加入固定提示文字（FR-026）：說明系統不驗證地址與座標是否一致、使用者端的距離計算一律以座標為準、地址僅供顯示。
+- [x] T019 [US2] 建立 `backend/app/schemas/admin.py`：`StoreInput`／`StorePatch`／`StoreOut`／`StoreWithCountOut`，欄位依 [contracts/admin-api.yaml](./contracts/admin-api.yaml)。以 pydantic `model_validator` 實作**座標成對驗證**——`StorePatch` 須以「套用更新後的最終狀態」判定，而非只看本次請求帶了哪些欄位（FR-022）。緯經度範圍以 `Field(ge=..., le=...)` 約束（FR-023）。錯誤訊息為可直接呈現的中文。
+- [x] T020 [US2] 建立 `backend/app/services/admin_stores.py`（**檔名刻意不用 `stores.py`**——第二輪已規劃 `services/stores.py` 存放讀取查詢管線，同名會在合併時硬衝突）：實作 `list_stores()`（以 `LEFT OUTER JOIN + GROUP BY` 一次帶出每筆的 `menu_item_count`，[research.md R-08](./research.md#r-08刪除前如何取得將一併刪除的餐點數量)）、`get_store()`、`create_store()`、`update_store()`、`delete_store()`。查無資料一律 `raise AppError("NOT_FOUND")`。依賴 T005、T019。
+- [x] T021 [US2] 建立 `backend/app/api/v1/admin_stores.py`：`APIRouter(prefix="/admin/stores", tags=["admin"], dependencies=[Depends(require_admin)])`，實作 `GET /`、`POST /`、`GET /{store_id}`、`PATCH /{store_id}`、`DELETE /{store_id}`（204 無回應體）。並於 `backend/app/main.py` 掛載。依賴 T020。
+- [x] T022 [P] [US2] 在 `frontend/src/lib/api/types.ts` 新增 `Store`／`StoreWithCount`／`StoreInput` 型別，在 `frontend/src/lib/api/endpoints.ts` 新增 `adminApi.stores` 的 list／create／get／update／remove。路徑以 `/admin/stores...` 起始，沿用既有 `NEXT_PUBLIC_API_BASE_URL`（已含 `/api/v1`），**不新增第二個 base URL 環境變數**（[research.md R-01](./research.md#r-01管理端-api-的路由前綴)）。
+- [x] T023 [US2] 建立 `frontend/src/app/admin/page.tsx`：以原生 `<table>` 呈現店家清單（名稱／地址／座標狀態／餐點數／操作），沿用既有 TanStack Query。**不引入任何 UI 元件庫、表格庫或表單庫**（[research.md R-13](./research.md#r-13後台介面的技術選擇)）。依賴 T016、T022。
+- [x] T024 [US2] 建立 `frontend/src/components/admin/StoreForm.tsx`：名稱／地址／緯度／經度四個欄位的新增與編輯表單，以既有 `frontend/src/components/ui/Modal.tsx` 呈現。前端亦需擋下「只填單一座標值」，錯誤訊息與後端一致。
+- [x] T025 [US2] 在店家清單實作**未設定座標的明確標示**（FR-025、SC-009）：`latitude` 為 null 的列顯示可一眼辨識的標記，並附說明「未設定座標，不會出現在使用者端的附近店家推薦中」。管理員無需開啟個別店家即可辨識待補資料。修改 `frontend/src/app/admin/page.tsx`。
+- [x] T026 [US2] 在 `StoreForm.tsx` 的座標欄位旁加入固定提示文字（FR-026）：說明系統不驗證地址與座標是否一致、使用者端的距離計算一律以座標為準、地址僅供顯示。
 
 **Checkpoint**: US1 + US2 皆可獨立運作。後台已能維護店家。
 
@@ -150,12 +150,12 @@ Web app 結構（沿用第一輪）：後端 `backend/app/`、`backend/tests/`�
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T034 [P] [US4] 在 `backend/tests/integration/test_admin_stores.py` 新增 **cascade 刪除**測試：建立一家含 3 道餐點的店家，刪除該店家後斷言 `SELECT count(*) FROM menu_items WHERE store_id = <已刪除 id>` 為 **0**（FR-040、SC-008）。**此測試必須跑在真 PostgreSQL 上**——`ON DELETE CASCADE` 是資料庫層行為，既有 conftest 的 testcontainers 方案已備妥。
+- [x] T034 [P] [US4] 在 `backend/tests/integration/test_admin_stores.py` 新增 **cascade 刪除**測試：建立一家含 3 道餐點的店家，刪除該店家後斷言 `SELECT count(*) FROM menu_items WHERE store_id = <已刪除 id>` 為 **0**（FR-040、SC-008）。**此測試必須跑在真 PostgreSQL 上**——`ON DELETE CASCADE` 是資料庫層行為，既有 conftest 的 testcontainers 方案已備妥。
 
 ### Implementation for User Story 4
 
-- [ ] T035 [P] [US4] 建立 `frontend/src/components/admin/ConfirmDialog.tsx`：通用的二次確認對話框，接受標題、說明文字與確認／取消回呼，沿用既有 `Modal.tsx`。
-- [ ] T036 [US4] 在 `frontend/src/app/admin/page.tsx` 的刪除流程接上 `ConfirmDialog`：確認訊息須依清單既有的 `menu_item_count` **明確告知將一併刪除 N 道餐點**（FR-038）；餐點數為 0 時改為說明沒有餐點會被一併刪除（US4 驗收情境 4）；選擇取消時**不得發出任何請求**（FR-039）。依賴 T023、T035。
+- [x] T035 [P] [US4] 建立 `frontend/src/components/admin/ConfirmDialog.tsx`：通用的二次確認對話框，接受標題、說明文字與確認／取消回呼，沿用既有 `Modal.tsx`。
+- [x] T036 [US4] 在 `frontend/src/app/admin/page.tsx` 的刪除流程接上 `ConfirmDialog`：確認訊息須依清單既有的 `menu_item_count` **明確告知將一併刪除 N 道餐點**（FR-038）；餐點數為 0 時改為說明沒有餐點會被一併刪除（US4 驗收情境 4）；選擇取消時**不得發出任何請求**（FR-039）。依賴 T023、T035。
 
 **Checkpoint**: 全部 user story 完成，spec 的 4 個 story 皆可獨立驗收。
 
@@ -288,4 +288,5 @@ pytest backend/tests/integration/test_admin_access_control.py -v
 | T001 | 2026-08-04（implement 前重跑，含 `git fetch`） | 結論不變：三分支仍只有 `20260803_0001_initial_schema.py`，且 `0001` 的 docstring 已明載其未建立任何店家／餐點資料表；`backend/app/db/models/` 無 `store.py`／`menu_item.py`。**確認本輪需新建 migration（T008，US2 範圍）**。 |
 | T002 | 2026-08-04 | 三項全數定案：主鍵 **UUID**（雙方一致）；四個營養欄位 **nullable**（採納第二輪 OQ-2b 主張，本輪由 NOT NULL 改為可空）；`name` 用 **`VARCHAR(255)`**（從第一輪慣例，對讀取端無影響）。結論已同步回共用契約檔，spec／data-model／contracts 亦已連帶更新。**T008 的阻塞已解除。** |
 | US1 驗收 | 2026-08-04 | **通過。** 自動化：98 passed / 0 skipped（真 PostgreSQL），其中安全性 8 項 + 名單核對 15 項 + 登入角色同步 6 項；並以突變測試確認「拿掉權限保護時測試會失敗」。實機：後端 API 四項全對（管理員 200／一般使用者 403／未登入 401／一般使用者打一般 API 200，證明其 token 有效）；瀏覽器守衛情境 A～D 全對，**導離過程未閃現任何後台畫面**（FR-017）。前端 typecheck／lint／build／vitest 全綠。 |
+| US2 驗收 | 2026-08-04 | **通過。** 139 passed（真 PostgreSQL）。migration 0002 已套用，schema 與 data-model.md 逐欄一致（3 條座標 CHECK、4 條營養 CHECK、FK CASCADE、ix_menu_items_store）。實機驗證：建立含／不含座標店家皆 201、清單帶 menu_item_count、一般使用者存取店家 API 403、透過 API 刪除店家後殘留餐點數為 0。前端 typecheck／lint／build 全綠。 |
 | T037 | | |

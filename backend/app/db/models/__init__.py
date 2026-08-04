@@ -5,6 +5,7 @@ from app.db.models.food_reference import FoodNutritionReference, normalize_food_
 from app.db.models.health_profile import ACTIVITY_LEVELS, GENDERS, HealthProfile
 from app.db.models.meal_item import MealItem
 from app.db.models.meal_record import MEAL_TYPES, MealRecord
+from app.db.models.menu_item import MenuItem
 from app.db.models.recognition_job import (
     ERROR_BAD_RESPONSE,
     ERROR_TIMEOUT,
@@ -14,6 +15,7 @@ from app.db.models.recognition_job import (
     STATUS_PROCESSING,
     RecognitionJob,
 )
+from app.db.models.store import Store
 from app.db.models.user import ROLE_ADMIN, ROLE_USER, User
 
 __all__ = [
@@ -33,7 +35,9 @@ __all__ = [
     "HealthProfile",
     "MealItem",
     "MealRecord",
+    "MenuItem",
     "RecognitionJob",
+    "Store",
     "User",
     "normalize_food_name",
 ]

@@ -65,7 +65,7 @@ async def test_liff_login_creates_user_and_returns_session(client, line_api, db_
     assert body["profile_completed"] is False
     assert body["user"]["display_name"] == "陳小明"
 
-    user = db_session.query(User).one()
+    user = db_session.query(User).filter(User.line_user_id == LINE_SUB).one()
     assert user.line_user_id == LINE_SUB
     # 本輪所有使用者皆為一般使用者（憲章原則 IV）。
     assert user.role == ROLE_USER
@@ -90,7 +90,7 @@ async def test_web_oauth_login_exchanges_code_then_uses_same_core(client, line_a
     # 網頁入口多一次 code → token 交換，之後仍走同一支驗證端點。
     assert any("token" in url for url in calls)
     assert any("verify" in url for url in calls)
-    assert db_session.query(User).count() == 1
+    assert db_session.query(User).filter(User.line_user_id == LINE_SUB).count() == 1
 
 
 async def test_both_entries_map_to_the_same_user(client, line_api, db_session):
@@ -108,7 +108,9 @@ async def test_both_entries_map_to_the_same_user(client, line_api, db_session):
         )
 
     assert liff.json()["user"]["id"] == web.json()["user"]["id"]
-    assert db_session.query(User).count() == 1, "不得因入口不同而建立兩位使用者"
+    assert db_session.query(User).filter(User.line_user_id == LINE_SUB).count() == 1, (
+        "不得因入口不同而建立兩位使用者"
+    )
 
 
 async def test_login_response_contains_no_entry_point_information(client, line_api):

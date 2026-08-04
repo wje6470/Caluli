@@ -178,7 +178,9 @@ async def test_both_entries_assign_the_same_role(client, line_api, allowlist, db
     assert web.status_code == 200
     # 同一 LINE 身分不論入口都是同一位使用者、同一個角色。
     assert liff.json()["user"]["id"] == web.json()["user"]["id"]
-    assert db_session.query(User).count() == 1
+    # 以 line_user_id 過濾而非全表計數——測試資料庫可能有其他已提交的
+    # 使用者（seed 腳本、冒煙測試），全表計數會讓本測試因無關資料而失敗。
+    assert db_session.query(User).filter(User.line_user_id == ADMIN_SUB).count() == 1
     assert _role_of(db_session, ADMIN_SUB) == ROLE_ADMIN
 
 

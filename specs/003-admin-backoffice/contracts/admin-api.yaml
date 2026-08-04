@@ -303,16 +303,28 @@ components:
     Store:
       type: object
       required: [id, name, address, latitude, longitude, created_at, updated_at]
+      description: |
+        ⚠️ 數值欄位在**回應中序列化為字串**（例如 "25.030000"），非 JSON number。
+
+        這不是本輪的選擇，而是全專案既有行為：schema 以 Decimal 宣告以避免
+        浮點誤差，而 pydantic v2 將 Decimal 序列化為字串以保留精度。第一輪的
+        health profile 等端點同樣如此（`height_cm` 回 "175.0"）。
+
+        本契約如實記載實際行為。輸入時接受 JSON number 或字串皆可。
+        第一輪的 contracts/openapi.yaml 與前端型別把這些欄位標為 number，
+        與實際不符——那是既有落差，修正需一併處理第一輪，不在本輪範圍
+        （FR-043）。
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         address: { type: string }
         latitude:
-          type: number
-          format: double
+          type: string
+          format: decimal
           nullable: true
+          example: "25.039600"
           description: null 代表未設定座標，該店家不會出現在第二輪依距離排序的結果中。
-        longitude: { type: number, format: double, nullable: true }
+        longitude: { type: string, format: decimal, nullable: true, example: "121.567900" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -370,20 +382,25 @@ components:
       type: object
       required:
         [id, store_id, name, calories, protein_g, carbs_g, fat_g, created_at, updated_at]
+      description: |
+        ⚠️ 四個營養欄位在回應中序列化為**字串**（例如 "500.00"），
+        理由同 Store schema 的說明。null 仍為 JSON null，不是字串 "null"，
+        故「未提供」與「0」在型別上即可區分。
       properties:
         id: { type: string, format: uuid }
         store_id: { type: string, format: uuid }
         name: { type: string }
         calories:
-          type: number
-          format: double
+          type: string
+          format: decimal
           nullable: true
+          example: "500.00"
           description: |
             null 代表店家未提供此項數值，**不是 0**。前端呈現時必須區分
             「未提供」與「0」，不得將 null 顯示為 0（FR-033）。
-        protein_g: { type: number, format: double, nullable: true }
-        carbs_g: { type: number, format: double, nullable: true }
-        fat_g: { type: number, format: double, nullable: true }
+        protein_g: { type: string, format: decimal, nullable: true }
+        carbs_g: { type: string, format: decimal, nullable: true }
+        fat_g: { type: string, format: decimal, nullable: true }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 

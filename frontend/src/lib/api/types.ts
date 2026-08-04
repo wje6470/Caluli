@@ -179,3 +179,37 @@ export interface AdminSession {
   display_name: string | null
   role: 'admin'
 }
+
+/**
+ * ⚠️ 數值欄位為 **string** 而非 number。
+ *
+ * 後端 schema 以 Decimal 宣告（避免浮點誤差），pydantic v2 將 Decimal
+ * 序列化為字串以保留精度，因此線路上收到的是 "25.039600" 這種字串。
+ * 這是全專案既有行為，第一輪的 height_cm 等欄位同樣如此——只是第一輪的
+ * 型別宣告寫成 number，與實際不符（既有落差，修正需一併處理第一輪）。
+ *
+ * 此處如實宣告為 string，需要運算時明確 Number() 轉換，不要假設它是數字。
+ */
+export interface Store {
+  id: string
+  name: string
+  address: string
+  /** null = 未設定座標，該店家不會出現在使用者端的附近店家推薦中。 */
+  latitude: string | null
+  longitude: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface StoreWithCount extends Store {
+  /** 刪除確認提示的「將一併刪除 N 道餐點」取自此欄位。 */
+  menu_item_count: number
+}
+
+/** 送出時可用 number；留空的座標送 null（必須成對）。 */
+export interface StoreInput {
+  name: string
+  address: string
+  latitude: number | null
+  longitude: number | null
+}

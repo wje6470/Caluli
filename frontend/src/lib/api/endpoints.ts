@@ -3,6 +3,9 @@
 import { api } from './client'
 import type {
   AdminSession,
+  Store,
+  StoreInput,
+  StoreWithCount,
   DashboardResponse,
   HealthProfile,
   HealthProfileInput,
@@ -80,4 +83,13 @@ export const adminApi = {
    * 非管理員會拿到 403，一般使用者未登入則是 401。
    */
   me: () => api.get<AdminSession>('/admin/me'),
+
+  stores: {
+    list: () => api.get<{ stores: StoreWithCount[] }>('/admin/stores'),
+    create: (input: StoreInput) => api.post<Store>('/admin/stores', input),
+    update: (id: string, input: Partial<StoreInput>) =>
+      api.patch<Store>(`/admin/stores/${id}`, input),
+    /** 連帶刪除該店家底下的所有餐點——呼叫前務必二次確認（FR-038）。 */
+    remove: (id: string) => api.delete<void>(`/admin/stores/${id}`),
+  },
 }
