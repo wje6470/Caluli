@@ -304,27 +304,32 @@ components:
       type: object
       required: [id, name, address, latitude, longitude, created_at, updated_at]
       description: |
-        ⚠️ 數值欄位在**回應中序列化為字串**（例如 "25.030000"），非 JSON number。
+        數值欄位為 **JSON number**（2026-08-04 與第二輪定案）。
 
-        這不是本輪的選擇，而是全專案既有行為：schema 以 Decimal 宣告以避免
-        浮點誤差，而 pydantic v2 將 Decimal 序列化為字串以保留精度。第一輪的
-        health profile 等端點同樣如此（`height_cm` 回 "175.0"）。
+        實作上回應 schema 用 `float` 而非 `Decimal`——pydantic v2 會把 Decimal
+        序列化成字串，與本契約及四端的型別宣告不符。三個理由：
 
-        本契約如實記載實際行為。輸入時接受 JSON number 或字串皆可。
-        第一輪的 contracts/openapi.yaml 與前端型別把這些欄位標為 number，
-        與實際不符——那是既有落差，修正需一併處理第一輪，不在本輪範圍
-        （FR-043）。
+          1. string 的精度優勢在本專案不成立：每個消費端拿到值第一件事就是
+             轉 float 顯示或計算，只是把轉換往後推。
+          2. 憲章原則 III 要求四端（LIFF／網頁／iOS／Android）呼叫同一組 API
+             且契約一致；Dart／Swift 端遇到字串得逐欄 parse。
+          3. 精度無損：NUMERIC(9,6) 最多 9 位有效數字、NUMERIC(7,2) 最多 7 位，
+             皆遠低於 float64 的 ~15–17 位。
+
+        ⚠️ 第一輪的端點（例如 `/me/profile` 的 `height_cm`）目前仍回字串，
+        與其自身契約宣告的 number 不符。那是既有落差，修正需一併處理第一輪，
+        不在本輪範圍（FR-043）。
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         address: { type: string }
         latitude:
-          type: string
-          format: decimal
+          type: number
+          format: double
           nullable: true
-          example: "25.039600"
+          example: 25.0396
           description: null 代表未設定座標，該店家不會出現在第二輪依距離排序的結果中。
-        longitude: { type: string, format: decimal, nullable: true, example: "121.567900" }
+        longitude: { type: number, format: double, nullable: true, example: 121.5679 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -383,24 +388,25 @@ components:
       required:
         [id, store_id, name, calories, protein_g, carbs_g, fat_g, created_at, updated_at]
       description: |
-        ⚠️ 四個營養欄位在回應中序列化為**字串**（例如 "500.00"），
-        理由同 Store schema 的說明。null 仍為 JSON null，不是字串 "null"，
-        故「未提供」與「0」在型別上即可區分。
+        四個營養欄位為 **JSON number**，理由同 Store schema。
+
+        null 仍是 JSON null（不是字串 "null"，也不是 0），故「未提供」與
+        「0」在型別上依然直接可分——此點不受型別調整影響。
       properties:
         id: { type: string, format: uuid }
         store_id: { type: string, format: uuid }
         name: { type: string }
         calories:
-          type: string
-          format: decimal
+          type: number
+          format: double
           nullable: true
-          example: "500.00"
+          example: 500
           description: |
             null 代表店家未提供此項數值，**不是 0**。前端呈現時必須區分
             「未提供」與「0」，不得將 null 顯示為 0（FR-033）。
-        protein_g: { type: string, format: decimal, nullable: true }
-        carbs_g: { type: string, format: decimal, nullable: true }
-        fat_g: { type: string, format: decimal, nullable: true }
+        protein_g: { type: number, format: double, nullable: true }
+        carbs_g: { type: number, format: double, nullable: true }
+        fat_g: { type: number, format: double, nullable: true }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 

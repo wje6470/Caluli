@@ -589,3 +589,69 @@ async def test_delete_missing_menu_item_returns_404(client, auth):
         response = await ac.delete(f"/api/v1/admin/menu-items/{uuid.uuid4()}", headers=auth)
 
     assert response.status_code == 404
+
+
+# ═══════════════════════════════════════════════════════════════════
+# JSON 原生型別護欄（2026-08-04 雙方定案：數值一律為 JSON number）
+#
+# ★ 為什麼需要獨立的 isinstance 斷言
+# ==================================
+# 本檔其餘測試用 float(body["calories"]) 做比較，而 float("620.00") 與
+# float(620.0) **都會通過**——也就是說那些斷言完全擋不住「schema 改回
+# Decimal、回應變成字串」這種退化。第二輪就是因為這個盲點才讓字串型別
+# 一路走到前端，最後在 value.toFixed(1) 炸掉整頁。
+#
+# 故此處直接斷言 JSON 解析後的 Python 原生型別。
+# ═══════════════════════════════════════════════════════════════════
+
+
+async def test_store_numeric_fields_are_json_numbers_not_strings(client, auth, db_session):
+    store = _store(db_session, latitude=25.0396, longitude=121.5679)
+
+    async with client as ac:
+        detail = await ac.get(f"/api/v1/admin/stores/{store.id}", headers=auth)
+        listed = await ac.get("/api/v1/admin/stores", headers=auth)
+
+    body = detail.json()
+    assert isinstance(body["latitude"], float), (
+        f"latitude 應為 JSON number，實得 {type(body['latitude'])}"
+    )
+    assert isinstance(body["longitude"], float)
+
+    row = listed.json()["stores"][0]
+    assert isinstance(row["latitude"], float)
+    assert isinstance(row["menu_item_count"], int)
+
+
+async def test_menu_item_numeric_fields_are_json_numbers_not_strings(client, auth, db_session):
+    store = _store(db_session)
+    item = _menu_item(db_session, store, calories=620, protein_g=18.5, carbs_g=88, fat_g=21.2)
+
+    async with client as ac:
+        listed = await ac.get(f"/api/v1/admin/stores/{store.id}/menu-items", headers=auth)
+        updated = await ac.patch(
+            f"/api/v1/admin/menu-items/{item.id}", headers=auth, json={"calories": 650}
+        )
+
+    row = listed.json()["menu_items"][0]
+    for field in ("calories", "protein_g", "carbs_g", "fat_g"):
+        assert isinstance(row[field], float), f"{field} 應為 JSON number，實得 {type(row[field])}"
+
+    assert isinstance(updated.json()["calories"], float)
+
+
+async def test_zero_stays_number_and_null_stays_null(client, auth, db_session):
+    """型別調整後仍須維持：0 是 number、未提供是 JSON null（不是字串 "null"）。"""
+    store = _store(db_session)
+
+    async with client as ac:
+        response = await ac.post(
+            f"/api/v1/admin/stores/{store.id}/menu-items",
+            headers=auth,
+            json={"name": "零卡", "calories": 0},
+        )
+
+    body = response.json()
+    assert isinstance(body["calories"], float)
+    assert body["calories"] == 0
+    assert body["protein_g"] is None

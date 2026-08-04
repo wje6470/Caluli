@@ -22,11 +22,11 @@ import { adminApi } from '@/lib/api/endpoints'
 import type { MenuItem, MenuItemInput } from '@/lib/api/types'
 
 /** null → 「未提供」；0 → 「0」。不可用 falsy 判斷（FR-033）。 */
-function NutritionCell({ value }: { value: string | null }) {
+function NutritionCell({ value }: { value: number | null }) {
   if (value === null) {
     return <span className="text-xs text-slate-400">未提供</span>
   }
-  return <span>{Number(value)}</span>
+  return <span>{value}</span>
 }
 
 export default function AdminStoreMenuPage() {

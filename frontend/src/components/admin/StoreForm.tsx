@@ -29,9 +29,11 @@ const input =
 export function StoreForm({ store, onSubmit, onCancel, pending, error }: Props) {
   const [name, setName] = useState(store?.name ?? '')
   const [address, setAddress] = useState(store?.address ?? '')
-  // 座標以字串保存：空字串代表「未設定」，與 "0" 是不同的狀態。
-  const [latitude, setLatitude] = useState(store?.latitude ?? '')
-  const [longitude, setLongitude] = useState(store?.longitude ?? '')
+  // 座標以字串保存表單狀態：空字串代表「未設定」。
+  // API 回傳的是 number，故初始化時轉字串——用 `?? ''` 直接接會讓型別變成
+  // number | ''，且 0 這種合法值也會被誤判。
+  const [latitude, setLatitude] = useState(store?.latitude?.toString() ?? '')
+  const [longitude, setLongitude] = useState(store?.longitude?.toString() ?? '')
   const [localError, setLocalError] = useState<string | null>(null)
 
   const handleSubmit = (event: React.FormEvent) => {

@@ -181,22 +181,22 @@ export interface AdminSession {
 }
 
 /**
- * ⚠️ 數值欄位為 **string** 而非 number。
+ * 數值欄位為 **number**（2026-08-04 與第二輪定案）。
  *
- * 後端 schema 以 Decimal 宣告（避免浮點誤差），pydantic v2 將 Decimal
- * 序列化為字串以保留精度，因此線路上收到的是 "25.039600" 這種字串。
- * 這是全專案既有行為，第一輪的 height_cm 等欄位同樣如此——只是第一輪的
- * 型別宣告寫成 number，與實際不符（既有落差，修正需一併處理第一輪）。
+ * 後端回應 schema 用 `float` 而非 `Decimal`——Decimal 在 pydantic v2 會
+ * 序列化成字串，而字串會讓 `value.toFixed(1)` 直接 TypeError（第二輪就是
+ * 這樣炸掉整頁的）。後端有 isinstance 斷言擋著這種退化。
  *
- * 此處如實宣告為 string，需要運算時明確 Number() 轉換，不要假設它是數字。
+ * ⚠️ 第一輪的欄位（height_cm 等）目前仍回字串，但型別宣告是 number——
+ * 那是既有落差，不在本輪範圍。碰到第一輪的數值時仍要小心。
  */
 export interface Store {
   id: string
   name: string
   address: string
   /** null = 未設定座標，該店家不會出現在使用者端的附近店家推薦中。 */
-  latitude: string | null
-  longitude: string | null
+  latitude: number | null
+  longitude: number | null
   created_at: string
   updated_at: string
 }
@@ -217,19 +217,18 @@ export interface StoreInput {
 /**
  * 店家菜單上的餐點。
  *
- * ⚠️ 營養欄位為 `string | null`，兩層意義都要注意：
- *   - string 而非 number：同上，Decimal 序列化為字串
- *   - **null ≠ 0**：null 代表店家未提供，0 代表確實為零。
- *     呈現時必須區分，不得把 null 顯示成 0（FR-033）。
+ * ⚠️ **null ≠ 0**：null 代表店家未提供，0 代表確實為零。呈現時必須區分，
+ * 不得把 null 顯示成 0（FR-033）。特別注意不要用 `value || '—'` 這種寫法，
+ * 那會把 0 也當成假值。
  */
 export interface MenuItem {
   id: string
   store_id: string
   name: string
-  calories: string | null
-  protein_g: string | null
-  carbs_g: string | null
-  fat_g: string | null
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
   created_at: string
   updated_at: string
 }

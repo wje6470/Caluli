@@ -292,4 +292,5 @@ pytest backend/tests/integration/test_admin_access_control.py -v
 | US3 驗收 | 2026-08-04 | **通過。** 172 passed（真 PostgreSQL），其中安全測試 35 項涵蓋契約定義的全部 10 支端點。實機驗證：只填熱量→其餘欄位為 null 而非 0；零卡飲料→calories/fat_g 存為 0 且 protein_g 仍為 null（NULL 與 0 可區分）；負數→422 附可讀訊息；不存在的店家底下新增→404 且不產生孤兒餐點。前端 typecheck／lint／build／vitest 全綠。 |
 | T037 | 2026-08-04 | **通過。** quickstart 六項驗證的自動化部分 **31/31 passed**（腳本逐項比對 API 行為）。需眼睛判斷的「導離時不閃現後台畫面」已於 US1 以瀏覽器情境 A～D 確認。 |
 | T040 | 2026-08-04 | **一致。** 契約端點 10 支 vs 實作端點 10 支，雙向差集皆為空。資料表欄位與 [共用契約](../../reference/shared-schema-store-menu.md) 逐字相符（stores 7 欄、menu_items 9 欄），零增減零更名（SC-012）。 |
+| 數值型別對齊 | 2026-08-04（第二輪回覆後） | **改為 JSON number**。原採 string（Decimal 序列化結果），經第二輪四點論證後接受改為 float：憲章原則 III 要求四端契約一致、Dart/Swift 端逐欄 parse 成本乘以客戶端數、精度無損（NUMERIC(9,6) 遠低於 float64）、且第二輪實際因字串在  崩潰。已改 schemas/admin.py 輸出型別、contracts、前端 types 與表單初始化。**新增 3 支 isinstance 護欄**——突變測試證實舊有的 47 支  斷言對此退化完全免疫。 |
 | T042 | 2026-08-04 | **依 FR-045／FR-046 略過視覺打磨**，但修正一項實際缺陷：後台文字為深色（text-slate-900），而 body 帶 `dark:bg-slate-950`，作業系統為深色模式時會出現深色底＋深色字而讀不到。修法為在後台掛載期間移除 html 的 `dark` class（明確退出主題切換，非為後台實作深色版本），離開時還原。 |

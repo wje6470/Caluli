@@ -40,11 +40,17 @@ const input =
 
 export function MenuItemForm({ item, onSubmit, onCancel, pending, error }: Props) {
   const [name, setName] = useState(item?.name ?? '')
+  // API 回傳 number | null；表單以字串保存（空字串＝未提供）。
+  // ⚠️ 必須用 `?? ''` 而非 `|| ''`——數值 0 是合法且有意義的值，
+  //    用 || 會把「確實為 0」的餐點誤顯示成空欄位，儲存後就變成「未提供」。
+  const toField = (value: number | null | undefined): string =>
+    value === null || value === undefined ? '' : value.toString()
+
   const [values, setValues] = useState<Record<NutritionKey, string>>({
-    calories: item?.calories ?? '',
-    protein_g: item?.protein_g ?? '',
-    carbs_g: item?.carbs_g ?? '',
-    fat_g: item?.fat_g ?? '',
+    calories: toField(item?.calories),
+    protein_g: toField(item?.protein_g),
+    carbs_g: toField(item?.carbs_g),
+    fat_g: toField(item?.fat_g),
   })
   const [localError, setLocalError] = useState<string | null>(null)
 

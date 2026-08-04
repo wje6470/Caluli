@@ -148,21 +148,40 @@ DELETE /api/v1/admin/menu-items/{id}
 
 如果你們合併時在這個檔案遇到衝突，取我們的版本即可——過濾式斷言在你們的 seed 資料存在時也能通過。
 
-### 🔴 2. 數值欄位在 API 回應中是**字串**，不是 JSON number
+### ✅ 2. 數值型別 — 已依你們的決定改為 JSON number（2026-08-04 更新）
 
-```json
-{"latitude": "25.039600", "calories": "500.00", "protein_g": null}
+**你們的四點論證我們全部接受，本輪已改完。**
+
+原本我們選 string 的理由是「與第一輪保持一致」，但你們指出的第 3 點才是決定性的——憲章原則 III 明訂四端呼叫同一組 API 且契約一致，Dart／Swift 端逐欄 `parse` 的成本會乘以客戶端數量。我們只考慮了單一 API 內部的一致性，沒有把四端成本算進去。
+
+第 1 點也證實了：第一輪的 `formatGrams` 是 `(Math.round(value * 10) / 10).toFixed(1)`，宣告 `value: number` 卻能吃字串，純粹是因為 `value * 10` 先隱式轉型——**能跑是運氣，不是設計**。
+
+已改動：
+
+| 項目 | 改法 |
+|---|---|
+| `schemas/admin.py` | `StoreOut` / `MenuItemOut` 的數值欄位 `Decimal` → `float`（輸入 schema 維持 `Decimal`，ge/le 驗證照舊） |
+| `contracts/admin-api.yaml` | 數值欄位改回 `type: number` |
+| `frontend/.../types.ts` | `Store`、`MenuItem` 及 Input 型別 `string` → `number` |
+| 前端運算處 | 移除多餘的 `Number()`；表單初始化改用 `?.toString() ?? ''` |
+| 測試 | 新增 3 支 JSON 原生型別斷言 |
+
+**你們建議的 isinstance 護欄我們加了，而且它立刻證明了自己的價值。**
+
+我們做了突變測試：把輸出 schema 改回 `Decimal`，然後分別跑新舊測試——
+
+```
+舊的 float(x) 斷言    47 passed    ← 完全沒抓到
+新的 isinstance 護欄   3 failed    ← 抓到了
 ```
 
-原因：schema 以 `Decimal` 宣告（避免浮點誤差），pydantic v2 將 `Decimal` 序列化為字串以保留精度。
+跟你們遇到的情況一模一樣：`float("620.00")` 與 `float(620.0)` 都會通過，所以那 47 支測試對這種退化完全免疫。這道護欄不是可有可無。
 
-**這不是本輪造成的**——第一輪就是如此（`/me/profile` 回 `"height_cm":"175.0"`），只是第一輪的 `contracts/openapi.yaml` 與前端 `types.ts` 都把它標成 `number`，與實際不符。
-
-我們的處理：契約與前端型別**如實標為 string**，需要運算的地方明確 `Number()` 轉換。
-
-**請確認你們的前端型別與實際回應一致**——如果你們宣告 `calories: number` 卻收到 `"500.00"`，JS 在算術運算時會隱式轉型所以不會立刻爆，但 `.toFixed()`、`Math.round()` 之類會出問題，而且 `typeof` 判斷會失敗。
-
-`null` 仍是 JSON `null`（不是字串 `"null"`），所以「無資料」與「0」在型別上依然可以直接區分。
+> ⚠️ **仍未解決：第一輪的端點還是回字串**（`/me/profile` 的 `height_cm` 回 `"175.0"`），而它自己的契約與前端型別都宣告 `number`。
+>
+> 我們追過第一輪每一條會用到這些值的路徑：全部恰好避開了地雷（都用 `Math.round()`、乘法這類會隱式轉型的寫法，沒有任何一處直接對 API 值呼叫 `.toFixed()`）。**現在不會壞，但那是碰巧，不是設計**——TypeScript 不會警告，下一個人寫一行 `.toFixed()` 就會複製你們遇到的整頁崩潰。
+>
+> FR-043 不允許本輪修改第一輪，已與需求方確認**合併完成後另行處理**。完整分析（為什麼現在沒壞、哪一行是唯一的真地雷、要改哪 24 個欄位、驗證方式）記錄於 **[known-issues.md](./known-issues.md) KI-001**，接手時不必重新調查。
 
 ### 🟡 3. 管理端有自己的驗證錯誤格式，第一輪端點不受影響
 
@@ -185,11 +204,12 @@ DELETE /api/v1/admin/menu-items/{id}
 1. ✅ 保留第三輪的 `20260804_0002_stores_menu_items.py`（第二輪的已刪除）
 2. ✅ 保留第三輪的 `db/models/store.py` 與 `menu_item.py`，覆蓋第二輪的
 3. ✅ `db/models/__init__.py`、`core/config.py`、`main.py` 保留雙方追加
-4. ⚠️ 前端 `types.ts` / `endpoints.ts` 保留雙方追加，但 `Store` / `MenuItem` 型別**需先對齊數值欄位是 string 還是 number**（見注意事項 2）
+4. ✅ 前端 `types.ts` / `endpoints.ts` 保留雙方追加。`Store` / `MenuItem` 型別**雙方均已統一為 `number`**，可直接留一份（原本的分歧已解決，見注意事項 2）
 5. ✅ `main.py` 的 catch-all 404 路由必須維持在**所有 router 註冊之後**
 6. ✅ `test_auth.py` 取第三輪版本（過濾式斷言）
 7. ✅ 合併後 `reference/shared-schema-store-menu.md` 取第三輪版本（78 行，含行為約定）
-8. 合併後跑一次雙方全部測試：預期 172（第三輪）+ 136（第二輪）扣除重疊
+8. 合併後跑一次雙方全部測試：**175（第三輪）+ 138（第二輪）**，扣除重疊
+9. ✅ `api/v1/admin_route.py` 你們要沿用沒問題——它不含任何管理端專屬邏輯，就是把 `RequestValidationError` 轉成本專案的錯誤信封。掛 `route_class=AdminAPIRoute` 到你們的 router 即可。若覺得名稱綁 admin 不妥，合併後改名為 `envelope_route.py` 之類我們沒意見
 
 ### 合併後建議立刻驗證的三件事
 

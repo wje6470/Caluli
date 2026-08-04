@@ -85,14 +85,30 @@ class StorePatch(BaseModel):
 
 
 class StoreOut(BaseModel):
+    """★ 回應的數值欄位型別為 `float`，不是 `Decimal`（2026-08-04 雙方定案）
+
+    Decimal 在 pydantic v2 會序列化成**字串**（"25.039600"），而契約與四端的
+    型別宣告都是 JSON number。三個理由讓 float 勝出：
+
+      1. string 的精度優勢在本專案不成立——每個消費端拿到值第一件事就是轉
+         float 顯示或計算，只是把轉換往後推。
+      2. 憲章原則 III 要求四端呼叫同一組 API 且契約一致；Dart／Swift 端遇到
+         字串得對每個數值欄位 parse，成本乘以客戶端數量。
+      3. 精度無損：NUMERIC(9,6) 最多 9 位有效數字、NUMERIC(7,2) 最多 7 位，
+         都遠低於 float64 的 ~15–17 位。
+
+    ⚠️ 改回 Decimal 會靜默破壞所有客戶端。test_admin_stores.py 有
+       isinstance 斷言擋著——用 float(x) 比較是擋不住的，字串也會通過。
+    """
+
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     name: str
     address: str
     #: null 代表未設定座標——該店家不會出現在第二輪依距離排序的結果中。
-    latitude: Decimal | None
-    longitude: Decimal | None
+    latitude: float | None
+    longitude: float | None
     created_at: datetime
     updated_at: datetime
 
@@ -159,16 +175,22 @@ class MenuItemPatch(BaseModel):
 
 
 class MenuItemOut(BaseModel):
+    """數值欄位為 `float` 的理由同 StoreOut。
+
+    null 仍是 JSON null（不是字串），故「未提供」與「0」在型別上依然
+    直接可分——這點不受本次型別調整影響。
+    """
+
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     store_id: uuid.UUID
     name: str
     #: null = 店家未提供，**不是 0**。呈現時必須區分（FR-033）。
-    calories: Decimal | None
-    protein_g: Decimal | None
-    carbs_g: Decimal | None
-    fat_g: Decimal | None
+    calories: float | None
+    protein_g: float | None
+    carbs_g: float | None
+    fat_g: float | None
     created_at: datetime
     updated_at: datetime
 

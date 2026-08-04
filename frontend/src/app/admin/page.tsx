@@ -128,7 +128,7 @@ export default function AdminStoresPage() {
                       </span>
                     ) : (
                       <span className="text-xs text-slate-500">
-                        {Number(store.latitude).toFixed(4)}, {Number(store.longitude).toFixed(4)}
+                        {store.latitude.toFixed(4)}, {store.longitude?.toFixed(4)}
                       </span>
                     )}
                   </td>
