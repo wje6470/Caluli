@@ -38,9 +38,16 @@ class Settings(BaseSettings):
     line_token_endpoint: str = "https://api.line.me/oauth2/v2.1/token"
     line_verify_endpoint: str = "https://api.line.me/oauth2/v2.1/verify"
 
-    # --- 辨識服務（同機內部呼叫，見 contracts/recognition-service.md）---
+    # --- 辨識服務（第三方代管的「台灣小吃辨識 API」，見 contracts/recognition-service.md）---
+    #
+    # 本機／CI 預設指向 tools/recognition-stub；正式環境覆寫為：
+    #   https://taiwanese-food-api-528488788338.asia-east1.run.app
     recognition_service_url: str = "http://localhost:8900"
+    #: X-API-Key 認證用金鑰。呼叫 stub 時可留空（stub 不驗證此值）；
+    #: 正式環境呼叫真實服務時必填，缺少會導致對外一律回 401（research.md R-16）。
+    recognition_api_key: str = ""
     # ⚠️ OQ-4：暫定值，需以 recognition_jobs.duration_ms 實測後校準
+    # （正式環境為外部服務，需涵蓋公網延遲，見 research.md R-07 的 2026-08-04 更新）
     recognition_timeout_seconds: float = 30.0
 
     # --- Supabase Storage（正式環境的照片儲存）---

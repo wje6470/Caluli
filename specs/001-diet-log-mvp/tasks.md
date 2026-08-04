@@ -197,20 +197,20 @@ Web app 結構（見 [plan.md](./plan.md) Structure Decision）：`backend/`、`
 
 **前置**：[contracts/recognition-service.md](./contracts/recognition-service.md)（2026-08-04 修訂版）、research.md R-16
 
-- [ ] T126 [US2] 於 `backend/app/core/config.py` 新增 `recognition_api_key` 設定項（對應 `RECOGNITION_API_KEY`）；`recognition_service_url` 正式環境改指向 `https://taiwanese-food-api-528488788338.asia-east1.run.app`，本機／CI 維持指向 stub
-- [ ] T127 [US2] 改寫 `backend/app/services/recognition_client.py` 的 `call_recognition_service()`：URL 拼接改為 `{base}/api/detect`、multipart 欄位名由 `photo` 改為 `file`、加入 `X-API-Key` header（值取自 T126）；`401` 回應映射為 `RECOGNITION_UNAVAILABLE`（不對外揭露認證細節）
-- [ ] T128 [US2] 改寫 `backend/app/services/recognition_client.py` 的 `build_items()`：改解析新回應格式（`name`／`estimated_weight_g`／`calories`／`protein_g`／`carbs_g`／`fat_g`／`confidence`／`class_name`／`bbox`），以 `value / estimated_weight_g × 100` 反推 `per_100g` ← ★ **對前端與 `openapi.yaml` 的 `per_100g` 契約必須透明，前端不應因此變動**（R-16 決策 1）
-- [ ] T129 [US2] 於 T128 中將 `bbox` 座標由 `{x1,y1,x2,y2}` 轉換為既有 schema 的 `{x,y,width,height}`（`x=x1, y=y1, width=x2-x1, height=y2-y1`）
-- [ ] T130 [US2] 於 T128 中移除「查 `food_nutrition_references` 換算」邏輯：`food_reference_id` 一律 `null`、`nutrition_available` 除下方防禦性情況外一律 `true`、`candidates` 一律回傳空陣列 `[]`（R-16 決策 2）
-- [ ] T131 [US2] 於 T128 中加入防禦性檢查：`estimated_weight_g` 為 0／缺漏／非正數時，該品項 `per_100g = null`、`nutrition_available = false`，仍列出 `name`，不得讓整次辨識失敗
-- [ ] T132 [US2] 於 `recognition_client.py` 加入 `items: []` 時的固定中文文案合成（例如「沒有偵測到食物，請換一張再試試」），寫入 `recognition_jobs.service_message`——上游不再提供 `message` 欄位
-- [ ] T133 [P] [US2] 檢視 `backend/app/schemas/recognition.py`：確認 `Per100g`／`RecognitionItem`／`FoodCandidate` 因 R-16 決策 1、2 維持不變即可滿足新契約；若確認不需改動，僅更新相關 docstring 說明來源已改為反推值
-- [ ] T134 [US2] 改寫 `tools/recognition-stub/stub.py`：回應格式對齊真實契約（`estimated_weight_g`＋絕對值＋`bbox:{x1,y1,x2,y2}`，無 `candidates`／`message`）；模式清單改為 `normal`／`empty`／`timeout`／`error`／`unauthorized`／`garbage`／`zero_weight`（移除 `unknown_label`，新增 `unauthorized` 與 `zero_weight`）
-- [ ] T135 [P] [US2] 更新 `backend/tests/contract/test_recognition_service.py`：fixture 改用新回應格式；新增 `zero_weight`（驗證 T131 防禦邏輯）與 `unauthorized`（驗證 401 → `RECOGNITION_UNAVAILABLE`）兩組契約測試
-- [ ] T136 [P] [US2] 更新 `backend/tests/integration/test_recognitions.py` 與 `backend/tests/smoke_e2e.py` 對辨識回應內容的既有斷言，改為驗證新格式下 `per_100g` 反推值正確、`candidates` 恆空、`food_reference_id` 恆 `null`
-- [ ] T137 [US2] 檢視 `frontend/src/components/capture/RecognitionItemCard.tsx`（T080 原「候選名稱改選」邏輯）：`candidates` 恆為空陣列時是否已優雅降級（隱藏候選 UI、引導改用既有的 `GET /foods/search` 手動搜尋入口，即 T082）；若元件目前假設 `candidates` 必有值，需調整為以陣列長度判斷是否顯示候選區塊
-- [ ] T138 [P] 同步更新 `backend/.env.example`：新增 `RECOGNITION_API_KEY`，`RECOGNITION_SERVICE_URL` 註解註明正式環境的真實 base URL（[quickstart.md](./quickstart.md) 已於 plan 階段更新，此處確保範例檔一致）
-- [ ] T139 [US2] 以真實外部 API（而非 stub）實際跑一次 `POST /api/v1/recognitions` 端到端請求，記錄 `recognition_jobs.duration_ms` 作為 OQ-1／OQ-4 的**首次真實數據**（取代原 T048 的 stub 延遲 319ms，該數據依 contracts/recognition-service.md 註記為不具代表性）
+- [X] T126 [US2] 於 `backend/app/core/config.py` 新增 `recognition_api_key` 設定項（對應 `RECOGNITION_API_KEY`）；`recognition_service_url` 正式環境改指向 `https://taiwanese-food-api-528488788338.asia-east1.run.app`，本機／CI 維持指向 stub
+- [X] T127 [US2] 改寫 `backend/app/services/recognition_client.py` 的 `call_recognition_service()`：URL 拼接改為 `{base}/api/detect`、multipart 欄位名由 `photo` 改為 `file`、加入 `X-API-Key` header（值取自 T126）；`401` 回應映射為 `RECOGNITION_UNAVAILABLE`（不對外揭露認證細節）
+- [X] T128 [US2] 改寫 `backend/app/services/recognition_client.py` 的 `build_items()`：改解析新回應格式（`name`／`estimated_weight_g`／`calories`／`protein_g`／`carbs_g`／`fat_g`／`confidence`／`class_name`／`bbox`），以 `value / estimated_weight_g × 100` 反推 `per_100g` ← ★ **對前端與 `openapi.yaml` 的 `per_100g` 契約必須透明，前端不應因此變動**（R-16 決策 1）
+- [X] T129 [US2] 於 T128 中將 `bbox` 座標由 `{x1,y1,x2,y2}` 轉換為既有 schema 的 `{x,y,width,height}`（`x=x1, y=y1, width=x2-x1, height=y2-y1`）
+- [X] T130 [US2] 於 T128 中移除「查 `food_nutrition_references` 換算」邏輯：`food_reference_id` 一律 `null`、`nutrition_available` 除下方防禦性情況外一律 `true`、`candidates` 一律回傳空陣列 `[]`（R-16 決策 2）
+- [X] T131 [US2] 於 T128 中加入防禦性檢查：`estimated_weight_g` 為 0／缺漏／非正數時，該品項 `per_100g = null`、`nutrition_available = false`，仍列出 `name`，不得讓整次辨識失敗
+- [X] T132 [US2] 於 `recognition_client.py` 加入 `items: []` 時的固定中文文案合成（例如「沒有偵測到食物，請換一張再試試」），寫入 `recognition_jobs.service_message`——上游不再提供 `message` 欄位
+- [X] T133 [P] [US2] 檢視 `backend/app/schemas/recognition.py`：確認 `Per100g`／`RecognitionItem`／`FoodCandidate` 因 R-16 決策 1、2 維持不變即可滿足新契約；若確認不需改動，僅更新相關 docstring 說明來源已改為反推值
+- [X] T134 [US2] 改寫 `tools/recognition-stub/stub.py`：回應格式對齊真實契約（`estimated_weight_g`＋絕對值＋`bbox:{x1,y1,x2,y2}`，無 `candidates`／`message`）；模式清單改為 `normal`／`empty`／`timeout`／`error`／`unauthorized`／`garbage`／`zero_weight`（移除 `unknown_label`，新增 `unauthorized` 與 `zero_weight`）
+- [X] T135 [P] [US2] 更新 `backend/tests/contract/test_recognition_service.py`：fixture 改用新回應格式；新增 `zero_weight`（驗證 T131 防禦邏輯）與 `unauthorized`（驗證 401 → `RECOGNITION_UNAVAILABLE`）兩組契約測試
+- [X] T136 [P] [US2] 更新 `backend/tests/integration/test_recognitions.py` 與 `backend/tests/smoke_e2e.py` 對辨識回應內容的既有斷言，改為驗證新格式下 `per_100g` 反推值正確、`candidates` 恆空、`food_reference_id` 恆 `null`
+- [X] T137 [US2] 檢視 `frontend/src/components/capture/RecognitionItemCard.tsx`（T080 原「候選名稱改選」邏輯）：`candidates` 恆為空陣列時是否已優雅降級（隱藏候選 UI、引導改用既有的 `GET /foods/search` 手動搜尋入口，即 T082）；若元件目前假設 `candidates` 必有值，需調整為以陣列長度判斷是否顯示候選區塊 ← **驗證結果：`hasCandidates = item.candidates.length > 1` 已用長度判斷，無需改動**
+- [X] T138 [P] 同步更新 `backend/.env.example`：新增 `RECOGNITION_API_KEY`，`RECOGNITION_SERVICE_URL` 註解註明正式環境的真實 base URL（[quickstart.md](./quickstart.md) 已於 plan 階段更新，此處確保範例檔一致）
+- [ ] T139 [US2] 以真實外部 API（而非 stub）實際跑一次 `POST /api/v1/recognitions` 端到端請求，記錄 `recognition_jobs.duration_ms` 作為 OQ-1／OQ-4 的**首次真實數據**（取代原 T048 的 stub 延遲 319ms，該數據依 contracts/recognition-service.md 註記為不具代表性）← **阻塞中：需要真實 `RECOGNITION_API_KEY` 才能執行，本機沒有金鑰**
 
 **Checkpoint**: 辨識管線改為真實外部 API 且既有前端／對外契約零改動；Phase 5（US2 前端）與既有測試套件可在此基礎上直接複用
 

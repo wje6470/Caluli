@@ -83,7 +83,9 @@ def main() -> int:
     first = data["items"][0]
     check("★ per_100g 存在（前端即時換算的必要條件）", first.get("per_100g") is not None)
     check("★ default_portion_grams 存在", first.get("default_portion_grams") is not None)
-    check("Top-K 候選存在", len(first.get("candidates", [])) > 0)
+    # 真實辨識服務不提供候選清單（research.md R-16），恆為空陣列。
+    check("candidates 為空陣列（無 Top-K）", first.get("candidates") == [])
+    check("food_reference_id 為 null（不再查對照表）", first.get("food_reference_id") is None)
     check("辨識耗時 < 5s", elapsed_ms < 5000, f"{elapsed_ms:.0f} ms")
     recognition_id = data["id"]
 
