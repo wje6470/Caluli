@@ -22,6 +22,23 @@ let initPromise: Promise<RuntimeEnv> | null = null
 let resolvedEnv: RuntimeEnv | null = null
 
 /**
+ * 🔧 本機開發用的環境覆寫（第二輪新增）。
+ *
+ * 桌機瀏覽器無論如何都無法讓 `liff.isInClient()` 為真，因此若沒有這個開關，
+ * 「僅於 LIFF 提供」的畫面（推薦餐廳）在本機完全無法檢視。
+ *
+ * ⚠️ **兩道條件同時成立才生效，缺一不可**：
+ *   1. `NODE_ENV !== 'production'` —— production build 中永遠為 false，
+ *      Next.js 會在編譯期把它常數摺疊掉，這段分支根本不會進入產物
+ *   2. 明確設定 `NEXT_PUBLIC_DEV_FORCE_LIFF=true`
+ *
+ * 因此它**不能**用來繞過正式環境的入口限制（FR-002）。
+ */
+function isDevForcedLiff(): boolean {
+  return process.env.NODE_ENV !== 'production' && env.devForceLiff
+}
+
+/**
  * 判斷目前執行環境。全應用只實際判斷一次，之後回傳快取結果。
  *
  * 任何失敗情況（未設定 LIFF ID、init 拋錯、非瀏覽器環境）一律回 'web'。
@@ -33,6 +50,9 @@ export async function initRuntimeEnv(): Promise<RuntimeEnv> {
   initPromise = (async (): Promise<RuntimeEnv> => {
     // 伺服器端渲染時沒有 LIFF，一律視為 web。
     if (typeof window === 'undefined') return 'web'
+
+    // 🔧 本機開發覆寫。production build 中此分支不存在（見 isDevForcedLiff）。
+    if (isDevForcedLiff()) return 'liff'
 
     // 未設定 LIFF ID = 這個部署不走 LIFF，直接降級。
     if (!env.liffId) return 'web'

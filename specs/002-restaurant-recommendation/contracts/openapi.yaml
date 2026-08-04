@@ -1,0 +1,347 @@
+openapi: 3.1.0
+info:
+  title: Caluli 推薦餐廳 API（第二輪）
+  version: 0.2.0
+  description: |
+    第二輪新增的店家／餐點查詢端點，掛載於第一輪既有的 `/api/v1` 之下，
+    沿用同一套 LINE Login 驗證核心與錯誤信封（憲章原則 I、III）。
+
+    設計要點：
+    - **本輪只有 GET**。新增／修改／刪除端點屬第三輪管理員後台，本輪不預先
+      實作也不預留（brief 明訂，避免與第三輪重複或衝突）。
+    - **不因入口分岔**。推薦餐廳的 UI 僅於 LIFF 提供，但後端不檢查來源入口，
+      不存在 LIFF 專屬端點（憲章「架構約束」，見 research.md R-03）。
+    - `GET /stores` 以有無 `lat`/`lng` 切換「附近模式」與「全部模式」，
+      同一資源不拆成兩個端點（research.md R-06）。
+    - 回應恆帶 `total_store_count`，使前端能區分三種空狀態（research.md R-05）。
+    - **與第一輪的通用食物營養對照表完全無關**。本檔案的營養數值一律來自
+      店家自行登錄，不查詢 `/foods/*`（憲章原則 V、FR-030、FR-031）。
+    - **無軟刪除**。資料表沒有 `deleted_at`／`is_active`，刪除為實刪除且店家
+      連帶刪除其餐點，故查詢不含任何「排除已刪除」的條件（FR-018a）。
+    - `menu_items` 的 `created_at`／`updated_at`（2026-08-04 交接新增）由寫入端
+      維護，**不在本 API 的回應中對外呈現**——本輪沒有需要它們的畫面。
+
+servers:
+  - url: /api/v1
+
+tags:
+  - name: stores
+    description: 店家與餐點查詢（唯讀）
+
+security:
+  - bearerAuth: []
+
+paths:
+  /stores:
+    get:
+      tags: [stores]
+      summary: 店家清單（附近模式或全部模式）
+      description: |
+        **附近模式**（同時提供 `lat` 與 `lng`）：計算各店家與該座標的直線距離，
+        排除無有效座標者、排除超過 5 公里者，依距離升冪排序後回傳最多 10 筆。
+
+        **全部模式**（不提供座標）：回傳全部店家，依名稱升冪排序，`distance_m` 為 `null`。
+        供定位權限被拒（FR-008）、定位服務失敗（FR-009），以及「附近查無店家」
+        時的「改看全部店家」（FR-019）使用。
+
+        `lat` 與 `lng` 必須同時提供或同時省略；只給其一回 422，
+        不會無聲退回全部模式（research.md R-06）。
+      parameters:
+        - name: lat
+          in: query
+          required: false
+          description: 使用者目前緯度。與 `lng` 必須成對出現。
+          schema:
+            type: number
+            format: double
+            minimum: -90
+            maximum: 90
+        - name: lng
+          in: query
+          required: false
+          description: 使用者目前經度。與 `lat` 必須成對出現。
+          schema:
+            type: number
+            format: double
+            minimum: -180
+            maximum: 180
+      responses:
+        "200":
+          description: |
+            查詢成功。`stores` 為空**不是**錯誤——它是三種空狀態之一，
+            由 `mode` 與 `total_store_count` 共同決定前端呈現哪一種畫面。
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoreListResponse" }
+              examples:
+                nearby:
+                  summary: 附近模式，找到 3 家
+                  value:
+                    mode: nearby
+                    radius_km: 5
+                    total_store_count: 15
+                    stores:
+                      - id: 6f1b2c8e-0000-5000-8000-000000000001
+                        name: "[測試] 台北車站便當屋"
+                        address: 臺北市中正區忠孝西路一段 49 號
+                        latitude: 25.047800
+                        longitude: 121.517000
+                        distance_m: 120
+                no_nearby:
+                  summary: 有店家但都在 5 公里外 → 前端顯示「附近查無店家」＋「改看全部店家」
+                  value:
+                    mode: nearby
+                    radius_km: 5
+                    total_store_count: 15
+                    stores: []
+                no_data:
+                  summary: 資料庫完全沒有店家 → 前端顯示「目前尚無店家資料」，不提供改看操作
+                  value:
+                    mode: nearby
+                    radius_km: 5
+                    total_store_count: 0
+                    stores: []
+                all:
+                  summary: 全部模式，distance_m 一律為 null
+                  value:
+                    mode: all
+                    radius_km: null
+                    total_store_count: 2
+                    stores:
+                      - id: 6f1b2c8e-0000-5000-8000-000000000001
+                        name: "[測試] 台北車站便當屋"
+                        address: 臺北市中正區忠孝西路一段 49 號
+                        latitude: 25.047800
+                        longitude: 121.517000
+                        distance_m: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /stores/{store_id}:
+    get:
+      tags: [stores]
+      summary: 單一店家
+      description: |
+        供餐點頁顯示店名，以及直接以網址進入時取得店家資料。
+        店家不存在時回 404，前端據此顯示「此店家已不存在」並提供返回（FR-027）。
+      parameters:
+        - $ref: "#/components/parameters/StoreId"
+      responses:
+        "200":
+          description: 查詢成功。`distance_m` 恆為 `null`——此端點不接受座標。
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Store" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /stores/{store_id}/menu-items:
+    get:
+      tags: [stores]
+      summary: 店家的餐點清單
+      description: |
+        回傳該店家登錄的全部餐點。營養欄位為**每份餐點**的數值，
+        數值由店家自行登錄，**不查詢也不連動**第一輪的通用食物營養對照表
+        （憲章原則 V、FR-031）。
+
+        `menu_items` 為空陣列代表該店尚未登錄餐點，屬正常結果而非錯誤，
+        前端顯示空狀態說明與返回操作（FR-024）。
+      parameters:
+        - $ref: "#/components/parameters/StoreId"
+      responses:
+        "200":
+          description: 查詢成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MenuItemListResponse" }
+              examples:
+                normal:
+                  summary: 含一筆缺營養值的餐點
+                  value:
+                    menu_items:
+                      - id: 7a2c3d9f-0000-5000-8000-000000000001
+                        store_id: 6f1b2c8e-0000-5000-8000-000000000001
+                        name: 排骨便當
+                        calories_kcal: 780.00
+                        protein_g: 28.50
+                        carbs_g: 95.00
+                        fat_g: 30.20
+                      - id: 7a2c3d9f-0000-5000-8000-000000000002
+                        store_id: 6f1b2c8e-0000-5000-8000-000000000001
+                        name: 季節時蔬
+                        calories_kcal: null
+                        protein_g: null
+                        carbs_g: null
+                        fat_g: null
+                empty:
+                  summary: 該店尚未登錄餐點 → 空狀態畫面，非錯誤
+                  value:
+                    menu_items: []
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 第一輪既有的 session token，驗證邏輯不因入口或功能分岔。
+
+  parameters:
+    StoreId:
+      name: store_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    Store:
+      type: object
+      required: [id, name, address, latitude, longitude, distance_m]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: |
+            店家名稱。**不具唯一性**——連鎖分店同名為正常資料。
+            客戶端不得以此作為識別鍵或去重依據，一律使用 `id`（FR-016a）。
+        address:
+          type: [string, "null"]
+          description: |
+            地址。**是分辨同名分店的唯一依據**，清單必須顯示（FR-016）。
+            系統不驗證其與座標是否一致；距離一律以座標為準。
+        latitude:
+          type: [number, "null"]
+          format: double
+          description: |
+            緯度。**選填**——後台允許只建「名稱＋地址」而暫不填座標的店家，
+            故 `null` 是常態資料。無座標的店家不出現在附近模式的結果中，
+            但在全部模式中正常出現（FR-018）。
+        longitude:
+          type: [number, "null"]
+          format: double
+          description: 經度。寫入端保證與 `latitude` 同時有值或同時為 `null`。
+        distance_m:
+          type: [integer, "null"]
+          description: |
+            與使用者當次座標的直線距離（公尺，四捨五入至整數）。
+            全部模式與單一店家端點恆為 `null`——`null` 代表「未計算」，
+            不代表距離為 0。
+
+    StoreListResponse:
+      type: object
+      required: [mode, radius_km, total_store_count, stores]
+      properties:
+        mode:
+          type: string
+          enum: [nearby, all]
+          description: 本次查詢的模式。由是否提供座標決定，非由客戶端指定。
+        radius_km:
+          type: [number, "null"]
+          description: 附近模式所套用的半徑上限；全部模式為 `null`。
+          examples: [5]
+        total_store_count:
+          type: integer
+          minimum: 0
+          description: |
+            資料庫中的店家總數，**不受**半徑、筆數上限或座標有效性影響。
+            前端用它區分「附近查無店家」（> 0）與「尚無店家資料」（= 0），
+            兩者的文案與可用操作不同（research.md R-05）。
+        stores:
+          type: array
+          items: { $ref: "#/components/schemas/Store" }
+          description: 附近模式下最多 10 筆，依 `distance_m` 升冪；全部模式依名稱升冪。
+
+    MenuItem:
+      type: object
+      required: [id, store_id, name, calories_kcal, protein_g, carbs_g, fat_g]
+      properties:
+        id:
+          type: string
+          format: uuid
+        store_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        calories_kcal:
+          type: [number, "null"]
+          description: |
+            每份餐點的熱量（大卡）。對應資料表欄位 `calories`（共用契約的欄位名，
+            不可更動）；API 欄位名沿用第一輪 `calories_kcal` 的命名慣例。
+
+            **`null` 與 `0` 是兩種不同的有效狀態，不得互相正規化**（FR-025）：
+            - `null` → 店家未提供 → 前端顯示「無資料」
+            - `0`    → 店家登錄該營養素為零 → 前端顯示 `0`
+
+            ⚠️ `0` 是 falsy：以 `value or '無資料'` 之類的判斷會把 0 誤顯示為
+            「無資料」。必須以 `is None` / `=== null` 明確判斷。
+        protein_g:
+          type: [number, "null"]
+          description: 每份蛋白質（公克）。`null` 與 `0` 的語意區別同上。
+        carbs_g:
+          type: [number, "null"]
+          description: 每份碳水化合物（公克）。`null` 與 `0` 的語意區別同上。
+        fat_g:
+          type: [number, "null"]
+          description: 每份脂肪（公克）。`null` 與 `0` 的語意區別同上。
+
+    MenuItemListResponse:
+      type: object
+      required: [menu_items]
+      properties:
+        menu_items:
+          type: array
+          items: { $ref: "#/components/schemas/MenuItem" }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, retryable]
+          properties:
+            code: { type: string }
+            message:
+              type: string
+              description: 可直接呈現給使用者的訊息。
+            retryable:
+              type: boolean
+              description: 前端據此決定是否顯示「重試」，不自行維護 code 對照表。
+
+  responses:
+    Unauthorized:
+      description: 未登入或登入狀態失效。沿用第一輪行為：前端導回登入並記住原路徑。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: { code: UNAUTHORIZED, message: 請重新登入。, retryable: false }
+    NotFound:
+      description: 店家不存在（含使用者停留期間被第三輪後台刪除的情形）。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: { code: NOT_FOUND, message: 找不到指定的資料。, retryable: false }
+    ValidationError:
+      description: |
+        座標格式或範圍不正確（含只提供 `lat`／`lng` 其中之一）。
+        前端在送出前已先驗一次，正常流程不應觸發此回應（research.md R-07）。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: { code: VALIDATION_ERROR, message: 輸入的資料不正確，請檢查後再試。, retryable: false }
