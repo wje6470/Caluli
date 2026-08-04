@@ -26,20 +26,21 @@ from app.main import app
 from app.services.photo_storage import FileSystemPhotoStorage, get_photo_storage
 
 PHOTO = b"\xff\xd8\xff\xe0fake-jpeg-bytes"
-EMPTY_RESPONSE = {"items": [], "message": "沒有偵測到食物，請換一張再試試"}
+EMPTY_RESPONSE = {"items": []}
 NORMAL_RESPONSE = {
     "items": [
         {
-            "label": "braised_pork_rice",
+            "name": "滷肉飯",
+            "estimated_weight_g": 250,
+            "calories": 535.0,
+            "protein_g": 20.0,
+            "carbs_g": 60.0,
+            "fat_g": 22.5,
             "confidence": 0.93,
-            "bbox": {"x": 1, "y": 2, "width": 3, "height": 4},
-            "candidates": [
-                {"label": "braised_pork_rice", "confidence": 0.93},
-                {"label": "white_rice", "confidence": 0.04},
-            ],
+            "class_name": "braised_pork_over_rice",
+            "bbox": {"x1": 1, "y1": 2, "x2": 4, "y2": 6},
         }
     ],
-    "message": None,
 }
 
 
@@ -140,7 +141,11 @@ def upload(content: bytes = PHOTO, content_type: str = "image/jpeg"):
 async def test_successful_recognition_returns_items_with_per_100g(
     client, upstream, seeded_foods, db_session
 ):
-    """★ per_100g 必須出現在回應中——前端靠它做份量即時換算（R-09）。"""
+    """★ per_100g 必須出現在回應中——前端靠它做份量即時換算（R-09）。
+
+    辨識服務直接回傳絕對值，per_100g 由 recognition_client 反推得出
+    （research.md R-16），不再查詢 food_nutrition_references。
+    """
     upstream(lambda request: httpx.Response(200, json=NORMAL_RESPONSE))
 
     async with client as ac:
@@ -153,13 +158,13 @@ async def test_successful_recognition_returns_items_with_per_100g(
 
     item = body["items"][0]
     assert item["name"] == "滷肉飯"
+    assert item["food_reference_id"] is None
     assert item["nutrition_available"] is True
-    assert item["default_portion_grams"] == "250.0"
-    assert item["per_100g"]["calories_kcal"] == "187.00"
-    # Top-K 候選供使用者改選（FR-035），且候選也帶 per_100g 以便改選後重算。
-    assert len(item["candidates"]) == 2
-    assert item["candidates"][1]["name"] == "白飯"
-    assert item["candidates"][1]["per_100g"]["calories_kcal"] == "130.00"
+    assert item["default_portion_grams"] == "250"
+    # 535.0 / 250 * 100 = 214
+    assert float(item["per_100g"]["calories_kcal"]) == pytest.approx(214.0)
+    # 真實服務不提供候選清單（research.md R-16）。
+    assert item["candidates"] == []
 
 
 async def test_recognition_job_records_duration_for_oq1_calibration(
@@ -192,7 +197,7 @@ async def test_no_food_detected_returns_200_completed_not_an_error(
     body = response.json()
     assert body["status"] == STATUS_COMPLETED
     assert body["items"] == []
-    # 服務訊息原樣保留，供前端引導畫面顯示。
+    # 上游不提供 message，由後端合成固定文案（research.md R-16）。
     assert body["message"] == "沒有偵測到食物，請換一張再試試"
     assert "error" not in body
 
@@ -213,6 +218,12 @@ async def test_no_food_detected_returns_200_completed_not_an_error(
     [
         (lambda request: httpx.Response(500, json={"detail": "x"}), 503, "RECOGNITION_UNAVAILABLE"),
         (lambda request: httpx.Response(200, text="<html>"), 502, "RECOGNITION_BAD_RESPONSE"),
+        # 缺少／錯誤的 X-API-Key 對外一律呈現為服務不可用（research.md R-16）。
+        (
+            lambda request: httpx.Response(401, json={"detail": "invalid key"}),
+            503,
+            "RECOGNITION_UNAVAILABLE",
+        ),
     ],
 )
 async def test_recognition_failures_map_to_documented_codes(

@@ -26,8 +26,9 @@ JWT_EXPIRES_SECONDS=604800
 LINE_CHANNEL_ID=<LINE Login channel ID>
 LINE_CHANNEL_SECRET=<LINE Login channel secret>
 
-RECOGNITION_SERVICE_URL=http://localhost:8900
-RECOGNITION_TIMEOUT_SECONDS=30      # 暫定值，待 OQ-1／OQ-4 確認
+RECOGNITION_SERVICE_URL=http://localhost:8900      # 本機／CI 指向 stub；正式環境改為 https://taiwanese-food-api-528488788338.asia-east1.run.app
+RECOGNITION_API_KEY=<外部辨識 API 的 X-API-Key；本機打 stub 時可留空>
+RECOGNITION_TIMEOUT_SECONDS=30      # 暫定值，待 OQ-1／OQ-4 確認（正式環境需涵蓋外部服務公網延遲，見 research.md R-16）
 
 PHOTO_STORAGE_ROOT=./var/photos
 PHOTO_MAX_BYTES=10485760
@@ -111,7 +112,7 @@ cd frontend && npm run test:e2e
 5. **預期**：該項熱量與營養素**立即**更新（無網路請求、無「重新計算」按鈕），合計同步變動。
    - 驗證方式：開啟瀏覽器 Network 分頁，調整份量期間**不應有任何 API 呼叫**。
    - 數值驗證：`per_100g × 375 / 100`。
-6. 點某項的候選名稱改選其他食物。
+6. 點某項的「修正名稱」，改用通用食物對照表搜尋並選擇其他食物（本輪辨識服務不提供候選清單，修正入口為搜尋而非候選改選，見 research.md R-16）。
 7. **預期**：改以新食物的 `per_100g` 與 `default_portion_grams` 重新換算。
 8. 移除一項誤判品項 → **預期**：不列入合計。
 9. 儲存 → **預期**：返回儀表板，今日已攝取與剩餘熱量已含此筆，**無需手動重新整理**（FR-041）。
@@ -119,7 +120,7 @@ cd frontend && npm run test:e2e
 ### V4 — 未偵測到食物（FR-027）★ 最易誤實作
 
 1. 將 stub 切至 `empty` 模式後上傳照片。
-2. **預期**：顯示引導畫面，內容為辨識服務回傳的訊息「沒有偵測到食物，請換一張再試試」，並提供「重新拍攝」與「返回」。
+2. **預期**：顯示引導畫面，內容為後端合成的固定文案「沒有偵測到食物，請換一張再試試」（外部辨識服務本身不提供說明文字，見 [contracts/recognition-service.md](./contracts/recognition-service.md)），並提供「重新拍攝」與「返回」。
 3. **預期**：**不得**出現空的結果清單、空白畫面或通用錯誤畫面。
 4. **預期**：後端 `recognition_jobs` 該筆 `status = 'completed'`、`item_count = 0`（**不是** `failed`）。
 
@@ -129,8 +130,9 @@ cd frontend && npm run test:e2e
 |---|---|---|---|
 | `timeout` | 504 `RECOGNITION_TIMEOUT` | 逾時說明 + 「重試」 | 點重試**不需重新選照片**，走 `POST /recognitions/{id}/retry` |
 | `error` | 503 `RECOGNITION_UNAVAILABLE` | 服務忙碌說明 + 「重試」 | 連續 3 次失敗後另外出現「返回」 |
+| `unauthorized` | 503 `RECOGNITION_UNAVAILABLE` | 同上（`X-API-Key` 問題對使用者呈現為服務不可用，不揭露認證細節） | 同上 |
 | `garbage` | 502 `RECOGNITION_BAD_RESPONSE` | 同上，且不外露技術細節 | 同上 |
-| `unknown_label` | 200 | 品項列出但標示「無法自動換算」，可自行填入或移除 | — |
+| `zero_weight` | 200 | 品項列出但標示「無法自動換算」，可自行填入或移除（`estimated_weight_g = 0` 時無法反推 per_100g，見 research.md R-16） | — |
 
 另驗證：上傳非圖片檔 → 415；上傳 >10MB 檔案 → 413，兩者皆在送出辨識前即被擋下。
 
@@ -174,7 +176,8 @@ cd frontend && npm run test:e2e
 
 ## 已知限制（本輪）
 
-- 辨識服務的真實介面尚未確認（OQ-3），上述 V3〜V5 以 stub 驗證；真服務接上後需重跑一次。
-- 逾時門檻 30 秒為暫定值（OQ-4），需以 `recognition_jobs.duration_ms` 的實測分布回頭校準。
-- 通用食物營養對照表的涵蓋範圍取決於 seed 資料（OQ-2）；涵蓋不足時 V3 可能落入 `nutrition_available: false` 路徑。
+- 辨識服務介面已確認（OQ-3 關閉，見 [contracts/recognition-service.md](./contracts/recognition-service.md)、research.md R-16）；上述 V3〜V5 以 stub 驗證，正式環境串接真實外部 API 後應至少重跑一次 V3、V4、V5（含 401 情境）確認行為一致。
+- 逾時門檻 30 秒為暫定值（OQ-4），需以 `recognition_jobs.duration_ms` 的實測分布（涵蓋外部服務公網延遲）回頭校準。
+- 通用食物營養對照表僅供 FR-037 手動搜尋修正名稱使用（OQ-2 決定其涵蓋範圍）；辨識服務目前僅涵蓋 101 類台灣小吃，不在此範圍的食物一律呈現為未偵測到（V4 情境）。
+- `RECOGNITION_API_KEY` 輪替目前僅為手動流程（OQ-9），無自動化機制。
 - 無管理員後台、無推薦餐廳、無 Flutter 客戶端——皆屬後續輪次。

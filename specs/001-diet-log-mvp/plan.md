@@ -6,9 +6,9 @@
 
 ## Summary
 
-本輪交付一套以 LINE 身分登入的拍照飲食紀錄服務：使用者從 LINE 官方帳號或一般瀏覽器進入，完成 LINE 登入與個人健康檔案建檔後取得每日熱量目標，拍照或上傳相簿照片交由同機部署的 AI 辨識服務判別食物，系統套用預設份量換算營養值供使用者**即時調整**後儲存，並以儀表板與趨勢圖表呈現攝取狀況。
+本輪交付一套以 LINE 身分登入的拍照飲食紀錄服務：使用者從 LINE 官方帳號或一般瀏覽器進入，完成 LINE 登入與個人健康檔案建檔後取得每日熱量目標，拍照或上傳相簿照片交由第三方代管的「台灣小吃辨識 API」判別食物並直接取得估計份量與熱量／三大營養素，後端套用初始估計份量換算供使用者**即時調整**後儲存，並以儀表板與趨勢圖表呈現攝取狀況。
 
-技術取徑：Next.js 前端同時支援 LIFF 與一般瀏覽器（環境判斷收斂為單一模組，能力經包裝存取）；FastAPI 後端以單一驗證核心處理兩種入口的 LINE 憑證；PostgreSQL 儲存使用者、飲食紀錄與**獨立的**通用食物營養對照表。辨識服務以同步 HTTP 內部呼叫串接，但 API 採資源導向形狀（`{id, status, items}`）並預先實作 `processing` 狀態機，使未來改為非同步時不需破壞契約——這是本輪最重要的架構隔離決策。份量換算完全在前端執行（API 回傳 `per_100g` 原始值），後端於儲存時重新驗算。
+技術取徑：Next.js 前端同時支援 LIFF 與一般瀏覽器（環境判斷收斂為單一模組，能力經包裝存取）；FastAPI 後端以單一驗證核心處理兩種入口的 LINE 憑證；PostgreSQL 儲存使用者、飲食紀錄與**獨立的**通用食物營養對照表（現僅供手動搜尋修正名稱使用，見 R-16）。辨識服務以同步 HTTP 呼叫串接外部雲端 API（`X-API-Key` 認證），但對前端暴露的 API 仍採資源導向形狀（`{id, status, items}`）並預先實作 `processing` 狀態機，使未來改為非同步時不需破壞契約——這是本輪最重要的架構隔離決策。份量換算完全在前端執行；後端 adapter 由外部服務的絕對值反推 `per_100g` 供前端消費，並於儲存時重新驗算。
 
 ## Technical Context
 
@@ -23,7 +23,7 @@
 
 **Testing**: pytest + testcontainers（後端單元／整合）、辨識服務 stub（契約）、Vitest + React Testing Library（前端單元）、Playwright（端對端，兩種入口各一輪）
 
-**Target Platform**: 單台 Linux 伺服器（後端、辨識服務、資料庫同機）；前端為行動優先網頁，需同時運作於 LINE App 內建瀏覽器（LIFF）與一般手機／桌機瀏覽器
+**Target Platform**: 單台 Linux 伺服器（後端、資料庫同機；**辨識服務為第三方代管雲端 API，非同機部署**，見 [research.md](./research.md) R-16）；前端為行動優先網頁，需同時運作於 LINE App 內建瀏覽器（LIFF）與一般手機／桌機瀏覽器
 
 **Project Type**: Web application（frontend + backend 分離目錄，共用同一後端 API）
 
@@ -31,7 +31,7 @@
 
 - 份量調整後畫面重算 < 0.3 秒（SC-003）——以純前端計算達成，調整期間不得有任何 API 呼叫
 - 儀表板／趨勢查詢在 30 天區間、單一使用者資料量下 < 500 ms
-- 辨識等待上限 30 秒（暫定，OQ-4）
+- 辨識等待上限 30 秒（暫定，OQ-4；辨識服務為外部雲端 API，門檻需依實測公網延遲重新校準，見 research.md R-16）
 
 **Constraints**:
 
@@ -84,7 +84,7 @@ specs/001-diet-log-mvp/
 ├── quickstart.md                    # Phase 1：環境設定與 10 組驗證情境
 ├── contracts/
 │   ├── openapi.yaml                 # 後端對外 API 契約（13 端點）
-│   └── recognition-service.md       # 後端所消費的辨識服務契約（假定，OQ-3）
+│   └── recognition-service.md       # 後端所消費的辨識服務契約（已確認，OQ-3 關閉）
 ├── checklists/
 │   └── requirements.md              # 規格品質檢查
 └── tasks.md                         # Phase 2（/speckit.tasks 產出，本指令不建立）
@@ -170,35 +170,38 @@ docker-compose.yml                   # postgres + recognition-stub
 |---|---|
 | `services/line_auth.py` | 憲章原則 I：兩入口單一驗證核心 |
 | `lib/liff/environment.ts` | 憲章原則 II：環境判斷收斂、不假設 LIFF |
-| `services/recognition_client.py` | OQ-3 的變更隔離；辨識契約若有出入只改這裡 |
+| `services/recognition_client.py` | OQ-3 的變更隔離；辨識契約若有出入只改這裡（本輪已用於吸收真實外部 API 與假定契約的差異，見 research.md R-16） |
 | `hooks/useRecognition.ts` | R-07：預留 `processing` 分支，非同步遷移不需改畫面 |
 | `lib/nutrition.ts` + `components/capture/PortionSlider` | FR-031〜034、SC-003：份量即時重算，調整期間零 API 呼叫 |
 | `components/capture/EmptyResultGuide` | FR-027：`items: []` 走成功路徑的專屬引導畫面 |
 
 ## 關鍵架構決策摘要
 
-完整論證見 [research.md](./research.md)，此處摘錄影響最大的四項：
+完整論證見 [research.md](./research.md)，此處摘錄影響最大的五項：
 
 1. **辨識 API 採資源導向而非函式導向**（R-07）。即使本輪同步實作，回應永遠是 `{id, status, items, message}` 並提供 `GET /recognitions/{id}`。前端 `useRecognition()` 以 `status` 驅動畫面，`processing` 分支先寫好但暫不會觸發。非同步遷移的成本因此侷限於「後端一支端點的回應時機」與「前端一個 hook 的取得方式」，畫面層、資料模型與對外契約皆不需破壞性變更。
 
 2. **`items: []` 是成功而非錯誤**（R-08）。走 HTTP 200、`recognition_jobs.status = 'completed'`、`item_count = 0`。若歸為錯誤，前端會落入通用錯誤處理而渲染空清單——正是 FR-027 明文禁止的行為。
 
-3. **辨識回應必須帶 `per_100g`**（R-09）。這是「份量調整不呼叫後端」的必要條件，也是最容易在實作契約時漏掉、導致返工的欄位。儲存時後端以同一公式重新驗算，客戶端數值不採信。
+3. **對外回應必須帶 `per_100g`，由後端 adapter 反推**（R-09）。這是「份量調整不呼叫後端」的必要條件。本輪實際串接的外部辨識 API 只提供估計份量下的絕對值，`per_100g` 由 `recognition_client.build_items()` 反推得出，前端契約與計算邏輯因此不需改動。儲存時後端以同一公式重新驗算，客戶端數值不採信。
 
-4. **`meal_items` 儲存營養值快照**（R-11）。日後修正營養對照表不得追溯改變歷史紀錄與趨勢圖；`food_reference_id` 為弱關聯（`ON DELETE SET NULL`）。
+4. **`meal_items` 儲存營養值快照**（R-11）。日後修正營養對照表不得追溯改變歷史紀錄與趨勢圖；`food_reference_id` 為弱關聯（`ON DELETE SET NULL`）。辨識路徑產生的品項現一律 `food_reference_id = null`（新服務的營養值不再經由對照表換算）。
+
+5. **辨識服務為外部代管 API，契約差異收斂於單一 adapter**（R-16）。`services/recognition_client.py` 是與此服務的唯一接觸點；`X-API-Key` 認證、`estimated_weight_g`／絕對營養值格式、無 Top-K 候選等真實契約細節皆隔離在此檔案內，`recognition_jobs`、對外 API 契約（`openapi.yaml`）與前端皆不受影響。
 
 ## Open Questions
 
 | ID | 問題 | 現行假設 | 需在何時決定 |
 |---|---|---|---|
-| **OQ-1** | **辨識服務為同步或非同步？回應時間 p95？** | **同步 HTTP，逾時 30s** | **實作辨識串接前** |
-| OQ-2 | 通用食物營養對照表的資料來源與涵蓋範圍 | 本輪自建，需涵蓋模型所有輸出類別 | 資料表建立前 |
-| OQ-3 | 辨識服務的實際 HTTP 介面（端點、請求格式、成功回應完整欄位、是否回傳 Top-K 與 bbox） | 依 [contracts/recognition-service.md](./contracts/recognition-service.md) 的假定契約 | 實作辨識串接前 |
-| OQ-4 | 逾時門檻 30 秒是否合適 | 30s | 取得 OQ-1 實測後 |
+| **OQ-1** | **辨識服務為同步或非同步？回應時間 p95？** | **同步 HTTP，逾時 30s；p95 待實測，須涵蓋外部服務公網延遲（R-16）** | **實作辨識串接前** |
+| OQ-2 | 通用食物營養對照表的資料來源與涵蓋範圍 | 本輪自建，供 FR-037 手動搜尋使用（不再是辨識換算的必經路徑） | 資料表建立前 |
+| ~~OQ-3~~ | ~~辨識服務的實際 HTTP 介面~~ | **已確認關閉（2026-08-04）**，見 [contracts/recognition-service.md](./contracts/recognition-service.md)、research.md R-16 | 已解決 |
+| OQ-4 | 逾時門檻 30 秒是否合適 | 30s，需依外部服務實測回應時間重新校準 | 取得 OQ-1 實測後 |
 | OQ-5 | 照片保留期限與刪除政策 | 刪除紀錄時同步刪除照片檔案 | 上線前 |
 | OQ-6 | Rich Menu 分流方式（同一前端不同路由 vs 兩組 LIFF） | 本輪不決定 | 第二輪 plan |
 | OQ-7 | 個人健康檔案是否納入「性別」欄位 | 納入（BMR 公式所需） | 資料表建立前 |
 | OQ-8 | 年齡以「歲數」或「出生日期」儲存 | 歲數（與 prototype 一致） | 資料表建立前 |
+| OQ-9 | `RECOGNITION_API_KEY` 正式環境輪替流程 | 本輪僅手動輪替，無自動化機制 | 上線前 |
 
 **OQ-1 為 brief 指定必須標註的待確認技術假設**。非同步遷移的完整影響評估見 [research.md](./research.md) R-07 的對照表，結論為：現行 API 設計可在不破壞契約的前提下遷移。
 

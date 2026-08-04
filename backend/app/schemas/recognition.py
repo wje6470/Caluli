@@ -8,10 +8,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class Per100g(BaseModel):
-    """每 100 公克的原始營養值。
+    """每 100 公克的營養值。
 
     ⚠️ 此欄位為**必要**。前端靠它做份量即時換算而不再呼叫後端
     （research.md R-09）；移除將使份量即時調整無法運作。
+
+    辨識服務本身不提供此欄位（只給估計份量下的絕對值），由
+    `recognition_client.build_items()` 反推得出，對此 schema 透明
+    （research.md R-16）。
     """
 
     model_config = ConfigDict(frozen=True)
@@ -30,7 +34,11 @@ class BoundingBox(BaseModel):
 
 
 class FoodCandidate(BaseModel):
-    """HF 分類模型的 Top-K 候選之一，依信心度排序（FR-035）。"""
+    """Top-K 候選之一，依信心度排序（FR-035）。
+
+    本輪實際串接的辨識服務不提供候選清單，`RecognitionItem.candidates`
+    恆為空陣列；型別保留供未來服務改回提供候選時沿用（research.md R-16）。
+    """
 
     food_reference_id: uuid.UUID | None = None
     name: str

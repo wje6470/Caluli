@@ -61,13 +61,16 @@ async def _run_recognition(
         db.commit()
         raise exc.to_app_error() from exc
 
-    items = recognition_client.build_items(db, raw.items)
+    items = recognition_client.build_items(raw.items)
 
     # ★ items 為空也是 completed——「未偵測到食物」是成功的辨識結果。
+    # 上游不提供空結果的說明文字，此處合成固定文案（research.md R-16）。
     job.status = STATUS_COMPLETED
     job.error_code = None
     job.item_count = len(items)
-    job.service_message = raw.message
+    job.service_message = raw.message or (
+        recognition_client.DEFAULT_EMPTY_MESSAGE if not items else None
+    )
     job.raw_response = raw.raw
     job.duration_ms = raw.duration_ms  # 供 OQ-1／OQ-4 實測校準
     job.completed_at = datetime.now(UTC)
@@ -126,7 +129,7 @@ async def get_recognition(
 
     items = []
     if job.status == STATUS_COMPLETED and job.raw_response:
-        items = recognition_client.build_items(db, job.raw_response.get("items") or [])
+        items = recognition_client.build_items(job.raw_response.get("items") or [])
 
     if job.status == STATUS_FAILED and job.error_code:
         raise AppError(recognition_client.ERROR_CODE_MAP[job.error_code])

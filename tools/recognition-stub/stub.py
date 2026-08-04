@@ -1,12 +1,12 @@
 """可切換模式的假辨識服務。
 
-真辨識服務就緒前替代之，讓錯誤處理路徑能完整驗證——那是本輪需求密度
-最高、最容易漏測的區塊。模式定義見
-specs/001-diet-log-mvp/contracts/recognition-service.md
+模擬真實的「台灣小吃辨識 API」契約，讓錯誤處理路徑在不消耗真實服務
+金鑰額度、不依賴外部網路的情況下完整驗證。契約定義見
+specs/001-diet-log-mvp/contracts/recognition-service.md（2026-08-04 修訂）。
 
 用法：
     uv run uvicorn stub:app --port 8900
-    POST /predict?mode=empty
+    POST /api/detect?mode=empty
 """
 
 import asyncio
@@ -21,32 +21,40 @@ DEFAULT_MODE = os.getenv("STUB_DEFAULT_MODE", "normal")
 
 NORMAL_ITEMS = [
     {
-        "label": "braised_pork_rice",
+        "name": "滷肉飯",
+        "estimated_weight_g": 250,
+        "calories": 535.0,
+        "protein_g": 20.0,
+        "carbs_g": 60.0,
+        "fat_g": 22.5,
         "confidence": 0.93,
-        "bbox": {"x": 120, "y": 88, "width": 420, "height": 380},
-        "candidates": [
-            {"label": "braised_pork_rice", "confidence": 0.93},
-            {"label": "braised_pork_belly_rice", "confidence": 0.05},
-            {"label": "minced_pork_rice", "confidence": 0.02},
-        ],
+        "class_name": "braised_pork_over_rice",
+        "bbox": {"x1": 120, "y1": 80, "x2": 340, "y2": 260},
     },
     {
-        "label": "stir_fried_greens",
+        "name": "炒青菜",
+        "estimated_weight_g": 120,
+        "calories": 78.0,
+        "protein_g": 3.0,
+        "carbs_g": 6.0,
+        "fat_g": 4.8,
         "confidence": 0.81,
-        "bbox": {"x": 560, "y": 140, "width": 260, "height": 240},
-        "candidates": [
-            {"label": "stir_fried_greens", "confidence": 0.81},
-            {"label": "dumplings", "confidence": 0.11},
-        ],
+        "class_name": "stir_fried_greens",
+        "bbox": {"x1": 560, "y1": 140, "x2": 820, "y2": 380},
     },
 ]
 
-UNKNOWN_LABEL_ITEMS = [
+ZERO_WEIGHT_ITEMS = [
     {
-        "label": "label_not_in_reference_table",
-        "confidence": 0.77,
+        "name": "無法估算份量的品項",
+        "estimated_weight_g": 0,
+        "calories": 0.0,
+        "protein_g": 0.0,
+        "carbs_g": 0.0,
+        "fat_g": 0.0,
+        "confidence": 0.55,
+        "class_name": "unclassified",
         "bbox": None,
-        "candidates": [{"label": "label_not_in_reference_table", "confidence": 0.77}],
     }
 ]
 
@@ -56,29 +64,34 @@ async def healthz() -> dict[str, str]:
     return {"status": "ok", "default_mode": DEFAULT_MODE}
 
 
-@app.post("/predict")
-async def predict(
-    photo: UploadFile = File(...),  # noqa: ARG001 — 介面需要，stub 不讀內容
+@app.post("/api/detect")
+async def detect(
+    file: UploadFile = File(...),  # noqa: ARG001 — 介面需要，stub 不讀內容
     mode: str = Query(default=None),
 ):
     effective = mode or DEFAULT_MODE
 
     if effective == "empty":
-        # 已確認的錯誤／空結果格式。後端須視為**成功**（HTTP 200）。
-        return {"items": [], "message": "沒有偵測到食物，請換一張再試試"}
+        # 真實服務不提供 message 欄位；後端 adapter 須自行合成前端顯示文案。
+        return {"items": []}
 
     if effective == "timeout":
         # 超過後端的 RECOGNITION_TIMEOUT_SECONDS（預設 30s）。
         await asyncio.sleep(60)
-        return {"items": NORMAL_ITEMS, "message": None}
+        return {"items": NORMAL_ITEMS}
 
     if effective == "error":
         return JSONResponse(status_code=500, content={"detail": "internal model failure"})
 
+    if effective == "unauthorized":
+        # 模擬缺少或錯誤的 X-API-Key。
+        return JSONResponse(status_code=401, content={"detail": "invalid or missing X-API-Key"})
+
     if effective == "garbage":
         return PlainTextResponse("<html>502 Bad Gateway</html>", status_code=200)
 
-    if effective == "unknown_label":
-        return {"items": UNKNOWN_LABEL_ITEMS, "message": None}
+    if effective == "zero_weight":
+        # estimated_weight_g = 0：後端須降級為 nutrition_available=false，不得整次失敗。
+        return {"items": ZERO_WEIGHT_ITEMS}
 
-    return {"items": NORMAL_ITEMS, "message": None}
+    return {"items": NORMAL_ITEMS}
