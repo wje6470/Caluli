@@ -1,17 +1,26 @@
-"""餐點（menu_items）— 與第三輪管理員後台共用。
+"""店家菜單上的餐點及其營養數值。
 
-═══════════════════════════════════════════════════════════════════
-⚠️ 合併時以**第三輪（feature/round3-admin）的版本為準**，本檔可直接覆蓋
-═══════════════════════════════════════════════════════════════════
-理由與欄位來源見同目錄的 store.py 檔頭。
+⚠️ 與第一輪的 MealItem 只差兩個字母，語意完全不同
+==================================================
+    MealItem  (meal_items)  使用者拍照記錄下來的一項食物，數值為寫入
+                            當下的快照，屬於使用者的飲食紀錄
+    MenuItem  (menu_items)  店家菜單上的一道菜，數值由店家登錄
 
-⚠️ 不要與 meal_item.py 混淆
-============================
-`MenuItem`（本檔）＝ **店家登錄的餐點**營養值（第二／三輪，推薦餐廳）
-`MealItem`（meal_item.py）＝ **使用者飲食紀錄**中的品項（第一輪，拍照記帳）
+兩者**無任何關聯、無外鍵、不得互相參照**（憲章原則 V）。撰寫 import 時
+務必確認取用的是哪一個。
 
-兩者只差兩個字母，卻分屬憲章原則 V 要求嚴格隔離的兩套資料體系，
-誤用的代價很高——請確認 import 的是哪一個。
+★ 四個營養欄位為何可為空值
+==========================
+    NULL = 店家未提供此項數值
+    0    = 該項確實為零（零卡飲料、無脂餐點）
+
+**兩者語意不同，不得互相代替。** 若設為 NOT NULL，管理員遇到店家沒提供
+蛋白質資料時會被迫填一個 0——那不是缺資料，那是系統主動寫入了錯誤資料，
+且「未提供」與「確實為 0」的區別在寫入當下就永久喪失，無法事後還原。
+
+此項由第二輪於其 plan 階段提出（其 OQ-2b），2026-08-04 定案採 nullable，
+已同步回共用契約。四個欄位彼此獨立，不要求同時填寫或同時留空——與 Store
+的座標成對規則不同，不可比照。
 """
 
 import uuid
@@ -29,47 +38,43 @@ if TYPE_CHECKING:
 
 
 class MenuItem(Base, TimestampMixin):
-    """店家登錄的單一餐點及其營養數值。本輪唯讀。"""
-
     __tablename__ = "menu_items"
     __table_args__ = (
-        CheckConstraint("calories IS NULL OR calories >= 0", name="ck_menu_items_calories"),
-        CheckConstraint("protein_g IS NULL OR protein_g >= 0", name="ck_menu_items_protein"),
-        CheckConstraint("carbs_g IS NULL OR carbs_g >= 0", name="ck_menu_items_carbs"),
-        CheckConstraint("fat_g IS NULL OR fat_g >= 0", name="ck_menu_items_fat"),
+        # >= 0 而非 > 0：0 是合法值（FR-032）。
+        # PostgreSQL 的 CHECK 在欄位為 NULL 時求值為 UNKNOWN，而 CHECK 只在
+        # 結果為 FALSE 時才拒絕，故空值可正常寫入，不需額外寫 IS NULL OR。
+        CheckConstraint("calories >= 0", name="ck_menu_items_calories"),
+        CheckConstraint("protein_g >= 0", name="ck_menu_items_protein"),
+        CheckConstraint("carbs_g >= 0", name="ck_menu_items_carbs"),
+        CheckConstraint("fat_g >= 0", name="ck_menu_items_fat"),
+        # 主要查詢型態是「取某店家底下的所有餐點」，屬明確的外鍵查詢。
         Index("ix_menu_items_store", "store_id"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
 
-    #: ON DELETE CASCADE：刪除店家連帶刪除其全部餐點，不留孤兒資料。
-    #: 刪除為**實刪除**，資料表無 deleted_at／is_active——因此所有查詢
-    #: 都**不得**加「排除已刪除」的過濾條件（FR-018a）。
+    #: 強歸屬：餐點不能脫離店家存在。ON DELETE CASCADE 讓刪除店家時餐點
+    #: 一併消失，不留孤兒資料（FR-037、FR-040）。
+    #:
+    #: 與第一輪 meal_items.food_reference_id 的 SET NULL 語意不同——那是
+    #: 弱關聯（僅供來源追溯，刪除對照表不該刪掉使用者的歷史紀錄），此處
+    #: 是強歸屬，兩者不可比照。
     store_id: Mapped[uuid.UUID] = mapped_column(
         PgUUID(as_uuid=True),
         ForeignKey("stores.id", ondelete="CASCADE"),
         nullable=False,
     )
 
-    #: 餐點名稱。同店家內允許同名餐點，不強制唯一，查詢與呈現皆不得去重。
+    #: 不設 UNIQUE——同店家內允許同名餐點（例如大小份未在名稱中區分）。
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    # ------------------------------------------------------------------
-    # 營養欄位：**nullable 是必要的，不是隨意的選擇**
-    #
-    #   NULL → 店家未提供 → 畫面顯示「無資料」
-    #   0    → 店家登錄該營養素為零 → 畫面顯示 0
-    #
-    # 這兩者對使用者的意義不同（FR-025）。若改為 NOT NULL + 預設 0，
-    # 「未填寫」與「確實為 0」的區別在寫入當下即永久喪失，事後無法還原。
-    # 第三輪已確認 NULL 不會被寫成 0，並有測試專門斷言這點。
-    #
-    # ⚠️ 欄位名稱依共用契約為 `calories`（不是 calories_kcal）。API 回應
-    #    層才轉為 calories_kcal 以沿用第一輪的命名慣例，見 schemas/store.py。
-    # ------------------------------------------------------------------
+    # --- 營養數值：皆為選填，NULL ≠ 0（見模組說明）---
     calories: Mapped[Decimal | None] = mapped_column(Numeric(7, 2))
     protein_g: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
     carbs_g: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
     fat_g: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
 
     store: Mapped["Store"] = relationship(back_populates="menu_items")
+
+
+__all__ = ["MenuItem"]

@@ -8,19 +8,32 @@
 
 刻意放在 unit/ 而非 integration/：只讀 OpenAPI schema，不需要資料庫，
 因此在任何環境都跑得到（沒有 Docker 時整合測試會 skip）。
+
+⚠️ 篩選範圍必須排除 `/admin/`（2026-08-04 與第三輪合併時修正）
+==============================================================
+第三輪的管理端在 `/api/v1/admin/stores` 提供 POST／PATCH／DELETE，那是
+**預期且正確**的——寫入本來就歸它負責。本測試要守的是第二輪自己的
+`/api/v1/stores`（使用者端唯讀），不是全專案任何含 "stores" 的路徑。
+
+合併前原本的篩選條件是 `"/stores" in path`，合併後會把管理端的寫入端點
+一併框進來而誤報。這裡改為明確鎖定使用者端前綴。
 """
 
 from app.main import app
 
 WRITE_METHODS = {"post", "put", "patch", "delete"}
 
+#: 第二輪使用者端的唯讀前綴。管理端的 /api/v1/admin/stores 不在此範圍。
+PUBLIC_STORE_PREFIX = "/api/v1/stores"
+
 
 def _store_paths() -> dict:
+    """僅取第二輪使用者端的店家路徑，排除第三輪管理端。"""
     schema = app.openapi()
     return {
         path: item
         for path, item in schema["paths"].items()
-        if "/stores" in path
+        if path.startswith(PUBLIC_STORE_PREFIX)
     }
 
 
@@ -33,7 +46,7 @@ def test_store_endpoints_exist():
 
 
 def test_no_write_methods_on_store_endpoints():
-    """/stores 相關路徑下只能有 GET（spec FR-029）。"""
+    """使用者端 /api/v1/stores 下只能有 GET（spec FR-029）。"""
     offenders = []
     for path, item in _store_paths().items():
         for method in item:
@@ -41,9 +54,28 @@ def test_no_write_methods_on_store_endpoints():
                 offenders.append(f"{method.upper()} {path}")
 
     assert offenders == [], (
-        f"本輪不得提供店家／餐點的寫入端點（FR-029），但發現：{offenders}。"
-        "資料寫入由第三輪管理員後台負責。"
+        f"第二輪的使用者端不得提供店家／餐點的寫入端點（FR-029），但發現："
+        f"{offenders}。資料寫入由第三輪的 /api/v1/admin/stores 負責。"
     )
+
+
+def test_writes_live_on_the_admin_side():
+    """對照組：寫入端點確實存在，只是在管理端（第三輪）。
+
+    這支測試守的是**責任分工**而非單純的「沒有寫入端點」。若哪天有人把
+    篩選前綴寫錯導致 _store_paths() 回空集合，上面那支會空轉而永遠通過，
+    這支則會失敗——兩者互為對照。
+    """
+    schema = app.openapi()
+    admin_writes = {
+        f"{method.upper()} {path}"
+        for path, item in schema["paths"].items()
+        if path.startswith("/api/v1/admin/stores")
+        for method in item
+        if method.lower() in WRITE_METHODS
+    }
+
+    assert admin_writes, "管理端應提供店家寫入端點（第三輪 FR-034〜FR-040）"
 
 
 def test_store_endpoints_require_authentication():

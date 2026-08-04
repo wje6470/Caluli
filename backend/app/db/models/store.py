@@ -1,28 +1,16 @@
-"""店家（stores）— 與第三輪管理員後台共用。
+"""合作店家。
 
-═══════════════════════════════════════════════════════════════════
-⚠️ 合併時以**第三輪（feature/round3-admin）的版本為準**，本檔可直接覆蓋
-═══════════════════════════════════════════════════════════════════
-依 2026-08-04 第三輪執行清單，`stores` / `menu_items` 兩張表由第三輪建立
-（他們負責寫入，本輪只讀）。本檔存在的唯一理由是讓第二輪分支在合併前
-仍能獨立執行測試與 seed——欄位定義**逐欄比照第三輪的最終定義**，因此
-合併時直接採用對方版本即可，本輪的查詢程式碼不需要任何改動。
+★ 欄位結構受共用契約約束
+========================
+本表由第二輪（推薦餐廳，讀取端）與第三輪（後台維護，寫入端）共用，欄位
+結構完全依 reference/shared-schema-store-menu.md，**不得自行增減或更名**。
+需要調整時必須先修訂契約並知會對方，不得單方變更。
 
-本輪依賴的是 `from app.db.models import Store, MenuItem` 這個匯入介面，
-第三輪已保證該介面穩定，與檔案怎麼切無關。
-
-⚠️ 憲章原則 V — 資料表分離
-====================================
-`MenuItem`（見 menu_item.py）是「特定店家／餐點之營養值」，與第一輪的
-`FoodNutritionReference`（拍照辨識用之通用食物營養對照表）是**兩套完全
-獨立的資料**：禁止任何方向的外鍵、禁止合併、禁止以型別欄位混存。即使
-餐點名稱與通用對照表中的食物同名，也一律採用店家自行登錄的數值
-（spec FR-030、FR-031）。
-
-第三輪保證的三件事（本輪的查詢據此設計）：
-  1. 不會出現只有緯度沒有經度的店家（DB CHECK ＋ 寫入端擋掉）
-  2. 不會殘留無所屬店家的餐點（DB 層 ON DELETE CASCADE）
-  3. NULL 營養值不會被寫成 0（對方有測試專門斷言）
+★ 憲章原則 V：與通用食物營養對照表完全獨立
+==========================================
+本表與 food_nutrition_references 之間沒有任何外鍵，也不共用主鍵語意。
+店家餐點的營養值是店家自行登錄的既定數值，通用對照表則是辨識模型的估算
+基準，兩者正確性的責任歸屬不同，不得互相參照。
 """
 
 import uuid
@@ -39,45 +27,50 @@ if TYPE_CHECKING:
 
 
 class Store(Base, TimestampMixin):
-    """收錄的餐飲店家。本輪唯讀；寫入由第三輪管理員後台負責（FR-029）。"""
-
     __tablename__ = "stores"
     __table_args__ = (
-        # 保證經緯度成對存在或成對為 NULL——第三輪於 DB 層強制，
-        # 本輪的 _has_valid_coords() 仍保留防禦性檢查（成本為零）。
+        # 座標必須成對：允許「都沒填」與「都填了」，但不允許只有一個。
+        # 寫成布林等值比較是 PostgreSQL 中表達此語意最精簡的方式，也讓
+        # FR-022 成為結構上不可能違反的約束，而非只靠應用層驗證。
+        CheckConstraint("(latitude IS NULL) = (longitude IS NULL)", name="ck_stores_coords_paired"),
         CheckConstraint(
-            "(latitude IS NULL) = (longitude IS NULL)",
-            name="ck_stores_coords_paired",
-        ),
-        CheckConstraint(
-            "latitude IS NULL OR (latitude BETWEEN -90 AND 90)",
+            "latitude IS NULL OR (latitude >= -90 AND latitude <= 90)",
             name="ck_stores_latitude_range",
         ),
         CheckConstraint(
-            "longitude IS NULL OR (longitude BETWEEN -180 AND 180)",
+            "longitude IS NULL OR (longitude >= -180 AND longitude <= 180)",
             name="ck_stores_longitude_range",
         ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
 
-    #: 店家名稱。**刻意不設 UNIQUE**——連鎖分店同名是正常資料（FR-016a）。
-    #: 任何以 name 作為識別鍵的程式碼都是錯的，一律用 id。
+    #: 刻意**不設 UNIQUE**——連鎖分店同名是正常資料，以 address 區分（FR-027）。
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-
-    #: 地址。**NOT NULL**（第三輪 2026-08-04 定義）——它是分辨同名分店的
-    #: 唯一依據，故清單必須顯示（FR-016）。系統不驗證其與座標是否一致；
-    #: 距離一律以座標為準。
     address: Mapped[str] = mapped_column(String(500), nullable=False)
 
-    #: 經緯度為**選填**——後台允許只建「名稱＋地址」、暫不填座標的店家，
-    #: 故 NULL 是常態資料而非異常。無座標的店家不參與距離計算與排序
-    #: （FR-018），但在不排序的全部店家清單中正常出現。
+    #: 座標為**選填**（FR-021）：允許先建立名稱與地址、之後再補座標，
+    #: 避免為了通過必填而填入一個不實的座標——錯座標比沒座標更難發現，
+    #: 因為系統無從驗證地址與座標是否一致。
+    #:
+    #: 未設座標的店家不會出現在第二輪依距離排序的結果中（無距離可計算），
+    #: 但在不排序的完整清單中仍正常出現。此規則已寫入共用契約。
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
 
+    #: passive_deletes=True 讓刪除交由資料庫的 ON DELETE CASCADE 執行，
+    #: 不逐筆載入子資料。DB 層 cascade 使「殘留無主餐點」在結構上不可能
+    #: 發生（FR-040），而非依賴應用層記得先刪。
     menu_items: Mapped[list["MenuItem"]] = relationship(
         back_populates="store",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+
+    @property
+    def has_coordinates(self) -> bool:
+        """後台清單據此標示待補座標的店家（FR-025）。"""
+        return self.latitude is not None and self.longitude is not None
+
+
+__all__ = ["Store"]

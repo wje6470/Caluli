@@ -2,7 +2,14 @@
 
 import { api } from './client'
 import type {
+  AdminMenuItem,
+  AdminMenuItemInput,
+  AdminSession,
+  AdminStore,
+  AdminStoreInput,
+  AdminStoreWithCount,
   DashboardResponse,
+  FoodReference,
   HealthProfile,
   HealthProfileInput,
   MealRecord,
@@ -12,7 +19,6 @@ import type {
   MetricKey,
   Recognition,
   SessionResponse,
-  FoodReference,
   Store,
   StoreListResponse,
   TrendResponse,
@@ -92,4 +98,43 @@ export const storeApi = {
 
   menuItems: (storeId: string) =>
     api.get<MenuItemListResponse>(`/stores/${storeId}/menu-items`),
+}
+
+/**
+ * 管理端（第三輪）。路徑以 /admin 起始，沿用同一個 NEXT_PUBLIC_API_BASE_URL
+ * （已含 /api/v1）——刻意不另立 base URL，見 research.md R-01。
+ */
+export const adminApi = {
+  /**
+   * 確認目前使用者具備管理員身分。
+   *
+   * 用「呼叫受保護端點看它通不通過」來判斷權限，與後端實際的授權判斷走
+   * 同一條路徑；若改讀 /me 的欄位自行判斷，就會出現第二套邏輯（R-11）。
+   *
+   * 非管理員會拿到 403，一般使用者未登入則是 401。
+   */
+  me: () => api.get<AdminSession>('/admin/me'),
+
+  stores: {
+    list: () => api.get<{ stores: AdminStoreWithCount[] }>('/admin/stores'),
+    create: (input: AdminStoreInput) => api.post<AdminStore>('/admin/stores', input),
+    update: (id: string, input: Partial<AdminStoreInput>) =>
+      api.patch<AdminStore>(`/admin/stores/${id}`, input),
+    /** 連帶刪除該店家底下的所有餐點——呼叫前務必二次確認（FR-038）。 */
+    remove: (id: string) => api.delete<void>(`/admin/stores/${id}`),
+
+    /** 取得單一店家。餐點頁需要它來顯示店名。 */
+    get: (id: string) => api.get<AdminStore>(`/admin/stores/${id}`),
+  },
+
+  menuItems: {
+    list: (storeId: string) =>
+      api.get<{ menu_items: AdminMenuItem[] }>(`/admin/stores/${storeId}/menu-items`),
+    create: (storeId: string, input: AdminMenuItemInput) =>
+      api.post<AdminMenuItem>(`/admin/stores/${storeId}/menu-items`, input),
+    /** 以餐點自身 id 定位——餐點的所屬店家不可變更。 */
+    update: (id: string, input: Partial<AdminMenuItemInput>) =>
+      api.patch<AdminMenuItem>(`/admin/menu-items/${id}`, input),
+    remove: (id: string) => api.delete<void>(`/admin/menu-items/${id}`),
+  },
 }

@@ -169,8 +169,9 @@ export interface TrendResponse {
   target_achievement_rate: number
 }
 
+
 // ---------------------------------------------------------------------------
-// 推薦餐廳（第二輪）
+// 推薦餐廳（第二輪，唯讀）
 // ---------------------------------------------------------------------------
 
 export interface Store {
@@ -227,4 +228,87 @@ export interface MenuItem {
 export interface MenuItemListResponse {
   /** 空陣列代表該店尚未登錄餐點，屬正常結果而非錯誤（FR-024）。 */
   menu_items: MenuItem[]
+}
+
+// ─── 管理端（第三輪）────────────────────────────────────────────────
+// 對應 specs/003-admin-backoffice/contracts/admin-api.yaml
+// ⚠️ 這裡的型別統一加上 Admin 前綴，與上方第二輪唯讀查詢用的 Store／MenuItem
+// 刻意區分——兩者對應後端不同的 API 回應格式（欄位命名、是否含時間戳與
+// distance_m 皆不同），不是同一份資料的重複定義，不可合併或互相取代。
+
+/** GET /admin/me 的回應。非管理員拿不到 200，故 role 必為 'admin'。 */
+export interface AdminSession {
+  user_id: string
+  display_name: string | null
+  role: 'admin'
+}
+
+/**
+ * 數值欄位為 **number**（2026-08-04 與第二輪定案）。
+ *
+ * 後端回應 schema 用 `float` 而非 `Decimal`——Decimal 在 pydantic v2 會
+ * 序列化成字串，而字串會讓 `value.toFixed(1)` 直接 TypeError（第二輪就是
+ * 這樣炸掉整頁的）。後端有 isinstance 斷言擋著這種退化。
+ *
+ * ⚠️ 第一輪的欄位（height_cm 等）目前仍回字串，但型別宣告是 number——
+ * 那是既有落差，不在本輪範圍。碰到第一輪的數值時仍要小心。
+ */
+export interface AdminStore {
+  id: string
+  name: string
+  address: string
+  /** null = 未設定座標，該店家不會出現在使用者端的附近店家推薦中。 */
+  latitude: number | null
+  longitude: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminStoreWithCount extends AdminStore {
+  /** 刪除確認提示的「將一併刪除 N 道餐點」取自此欄位。 */
+  menu_item_count: number
+}
+
+/** 送出時可用 number；留空的座標送 null（必須成對）。 */
+export interface AdminStoreInput {
+  name: string
+  address: string
+  latitude: number | null
+  longitude: number | null
+}
+
+/**
+ * 店家菜單上的餐點（管理端視角）。
+ *
+ * ⚠️ **null ≠ 0**：null 代表店家未提供，0 代表確實為零。呈現時必須區分，
+ * 不得把 null 顯示成 0（FR-033）。特別注意不要用 `value || '—'` 這種寫法，
+ * 那會把 0 也當成假值。
+ *
+ * ⚠️ 欄位名稱是 `calories`（不是 `calories_kcal`）。這支是管理端直接對應
+ * 資料庫欄位的型別；上方第二輪的 `MenuItem.calories_kcal` 是使用者端 API
+ * 回應層轉換過的命名，兩者是不同端點的不同回應格式，不需要（也不應該）
+ * 統一成同一個名稱。
+ */
+export interface AdminMenuItem {
+  id: string
+  store_id: string
+  name: string
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * 送出餐點。四個營養欄位彼此獨立，皆可為 null（＝未提供）。
+ * 送 0 與送 null 是不同的意思，表單不得把空欄位轉成 0。
+ */
+export interface AdminMenuItemInput {
+  name: string
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
 }
