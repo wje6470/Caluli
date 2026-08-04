@@ -38,6 +38,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     retry: false,
   })
 
+  // ★ 後台一律以淺色呈現（FR-046：不實作深色模式）。
+  //
+  // Tailwind 的 darkMode 是 'class'，主題由 <html class="dark"> 驅動。後台
+  // 各處（含共用的 Modal）用的是 text-slate-700 這類深色文字，若 dark class
+  // 生效，作業系統為深色模式的管理員會看到**深色底 + 深色字**——那不是
+  // 「沒做深色模式」，是讀不到字。
+  //
+  // 在後台掛載期間移除該 class、離開時還原，等於明確退出主題切換，而不是
+  // 為後台實作一套深色版本。只需這一處，共用元件也一併涵蓋。
+  useEffect(() => {
+    const root = document.documentElement
+    const wasDark = root.classList.contains('dark')
+    if (wasDark) root.classList.remove('dark')
+    return () => {
+      if (wasDark) root.classList.add('dark')
+    }
+  }, [])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
 
@@ -60,19 +78,29 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   //   洩漏了後台的存在與結構。
   if (!hasToken || isPending || isError || !data) {
     return (
-      <main className="flex min-h-dvh items-center justify-center">
+      <main className="flex min-h-dvh items-center justify-center bg-slate-50">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-500" />
       </main>
     )
   }
 
+  // ★ 明確指定淺色底與文字色，不繼承 body 的配色。
+  //
+  // globals.css 的 body 帶 `dark:bg-slate-950 dark:text-slate-100`，而後台
+  // 各處用的是 text-slate-900 這類深色文字（FR-046：後台不實作深色模式）。
+  // 若沿用繼承來的底色，作業系統為深色模式的管理員會看到**深色底＋深色字**
+  // ——那不是「沒做深色模式」，是讀不到字。
+  //
+  // 這裡的作法是明確退出主題切換而非實作深色版本，符合 FR-046 的意圖。
   return (
-    <div className="mx-auto min-h-dvh w-full max-w-6xl px-6 py-8">
-      <header className="mb-6 flex items-baseline justify-between border-b border-slate-200 pb-4">
-        <h1 className="text-xl font-bold text-slate-900">Caluli 後台管理</h1>
-        <span className="text-sm text-slate-500">{data.display_name ?? '管理員'}</span>
-      </header>
-      {children}
+    <div className="min-h-dvh bg-slate-50 text-slate-800">
+      <div className="mx-auto w-full max-w-6xl px-6 py-8">
+        <header className="mb-6 flex items-baseline justify-between border-b border-slate-200 pb-4">
+          <h1 className="text-xl font-bold text-slate-900">Caluli 後台管理</h1>
+          <span className="text-sm text-slate-500">{data.display_name ?? '管理員'}</span>
+        </header>
+        {children}
+      </div>
     </div>
   )
 }

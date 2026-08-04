@@ -165,12 +165,12 @@ Web app 結構（沿用第一輪）：後端 `backend/app/`、`backend/tests/`�
 
 **Purpose**: 收尾與合併準備。tasks brief 明示介面視覺優化屬最低優先，故置於最後。
 
-- [ ] T037 依 [quickstart.md](./quickstart.md) 的 6 項驗證情境逐項手動驗收，將結果記錄於本檔末的「執行紀錄」。
-- [ ] T038 [P] 執行 `cd backend && ruff check . && ruff format --check .`，修正所有告警（line-length 100、既有 lint 規則）。
-- [ ] T039 [P] 執行 `cd frontend && npm run lint`，修正所有告警。
-- [ ] T040 契約一致性複查：逐欄比對 `backend/app/db/models/store.py`、`menu_item.py` 與 [reference/shared-schema-store-menu.md](../../reference/shared-schema-store-menu.md)，確認**欄位數量與名稱完全一致、零增減零更名**（SC-012）。若實作過程中曾偏離，須回頭修正或走契約修訂程序，不得默默保留。
-- [ ] T041 產出合併前協調清單並知會第二輪開發者：本輪已建立 `0002` migration 與兩個 model；第二輪若也已產生建表 migration，須依 [plan.md](./plan.md)「與第二輪分支的合併風險」處理三項衝突（migration 雙 head、重複建表、model 檔衝突）。**此任務不代為執行合併，只負責知會與記錄。**
-- [ ] T042 [P] 後台介面的視覺微調（**最低優先，可略過**）：僅在前述任務全數完成且有餘裕時進行。範圍限於基本可讀性（欄寬、間距、表單對齊）。**明確不做**：深色模式、行動版版面、動畫轉場、骨架屏、比照 `reference/prototype/caiuli.html` 的視覺風格（FR-045、FR-046）。
+- [x] T037 依 [quickstart.md](./quickstart.md) 的 6 項驗證情境逐項手動驗收，將結果記錄於本檔末的「執行紀錄」。
+- [x] T038 [P] 執行 `cd backend && ruff check . && ruff format --check .`，修正所有告警（line-length 100、既有 lint 規則）。
+- [x] T039 [P] 執行 `cd frontend && npm run lint`，修正所有告警。
+- [x] T040 契約一致性複查：逐欄比對 `backend/app/db/models/store.py`、`menu_item.py` 與 [reference/shared-schema-store-menu.md](../../reference/shared-schema-store-menu.md)，確認**欄位數量與名稱完全一致、零增減零更名**（SC-012）。若實作過程中曾偏離，須回頭修正或走契約修訂程序，不得默默保留。
+- [x] T041 產出合併前協調清單並知會第二輪開發者：本輪已建立 `0002` migration 與兩個 model；第二輪若也已產生建表 migration，須依 [plan.md](./plan.md)「與第二輪分支的合併風險」處理三項衝突（migration 雙 head、重複建表、model 檔衝突）。**此任務不代為執行合併，只負責知會與記錄。**
+- [x] T042 [P] 後台介面的視覺微調（**最低優先，可略過**）：僅在前述任務全數完成且有餘裕時進行。範圍限於基本可讀性（欄寬、間距、表單對齊）。**明確不做**：深色模式、行動版版面、動畫轉場、骨架屏、比照 `reference/prototype/caiuli.html` 的視覺風格（FR-045、FR-046）。
 
 ---
 
@@ -290,4 +290,6 @@ pytest backend/tests/integration/test_admin_access_control.py -v
 | US1 驗收 | 2026-08-04 | **通過。** 自動化：98 passed / 0 skipped（真 PostgreSQL），其中安全性 8 項 + 名單核對 15 項 + 登入角色同步 6 項；並以突變測試確認「拿掉權限保護時測試會失敗」。實機：後端 API 四項全對（管理員 200／一般使用者 403／未登入 401／一般使用者打一般 API 200，證明其 token 有效）；瀏覽器守衛情境 A～D 全對，**導離過程未閃現任何後台畫面**（FR-017）。前端 typecheck／lint／build／vitest 全綠。 |
 | US2 驗收 | 2026-08-04 | **通過。** 139 passed（真 PostgreSQL）。migration 0002 已套用，schema 與 data-model.md 逐欄一致（3 條座標 CHECK、4 條營養 CHECK、FK CASCADE、ix_menu_items_store）。實機驗證：建立含／不含座標店家皆 201、清單帶 menu_item_count、一般使用者存取店家 API 403、透過 API 刪除店家後殘留餐點數為 0。前端 typecheck／lint／build 全綠。 |
 | US3 驗收 | 2026-08-04 | **通過。** 172 passed（真 PostgreSQL），其中安全測試 35 項涵蓋契約定義的全部 10 支端點。實機驗證：只填熱量→其餘欄位為 null 而非 0；零卡飲料→calories/fat_g 存為 0 且 protein_g 仍為 null（NULL 與 0 可區分）；負數→422 附可讀訊息；不存在的店家底下新增→404 且不產生孤兒餐點。前端 typecheck／lint／build／vitest 全綠。 |
-| T037 | | |
+| T037 | 2026-08-04 | **通過。** quickstart 六項驗證的自動化部分 **31/31 passed**（腳本逐項比對 API 行為）。需眼睛判斷的「導離時不閃現後台畫面」已於 US1 以瀏覽器情境 A～D 確認。 |
+| T040 | 2026-08-04 | **一致。** 契約端點 10 支 vs 實作端點 10 支，雙向差集皆為空。資料表欄位與 [共用契約](../../reference/shared-schema-store-menu.md) 逐字相符（stores 7 欄、menu_items 9 欄），零增減零更名（SC-012）。 |
+| T042 | 2026-08-04 | **依 FR-045／FR-046 略過視覺打磨**，但修正一項實際缺陷：後台文字為深色（text-slate-900），而 body 帶 `dark:bg-slate-950`，作業系統為深色模式時會出現深色底＋深色字而讀不到。修法為在後台掛載期間移除 html 的 `dark` class（明確退出主題切換，非為後台實作深色版本），離開時還原。 |
