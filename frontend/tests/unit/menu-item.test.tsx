@@ -87,6 +87,56 @@ describe('MenuItemRow — 零值（0）★ falsy 陷阱', () => {
   })
 })
 
+describe('MenuItemRow — 型別漂移的防禦（回歸測試）', () => {
+  /**
+   * ★ 這是實際發生過的當機：後端把 Decimal 序列化成 JSON 字串
+   * （`"650.00"`），前端型別卻是 `number`，於是 `value.toFixed(1)`
+   * 直接拋 `TypeError: value.toFixed is not a function`，整頁崩潰。
+   *
+   * 根因已在後端修正（schemas/store.py 改用 float，並有整合測試斷言
+   * wire format）。這裡保留的是顯示層的防禦——一個純顯示元件不該因為
+   * 上游型別漂移就讓整個畫面掛掉。
+   */
+  it('收到字串型別的數值時不崩潰，且仍正確顯示', () => {
+    const withStrings = {
+      ...makeItem(),
+      // 刻意繞過型別檢查，模擬後端違反契約的情況。
+      calories_kcal: '650.00' as unknown as number,
+      protein_g: '25.00' as unknown as number,
+      carbs_g: '80.50' as unknown as number,
+      fat_g: '24.00' as unknown as number,
+    }
+
+    expect(() => render(<MenuItemRow item={withStrings} />)).not.toThrow()
+    expect(screen.getByText('650 kcal')).toBeInTheDocument()
+    expect(screen.getByText('80.5 g')).toBeInTheDocument()
+  })
+
+  it('字串 "0" 仍顯示為 0，不會變成「無資料」', () => {
+    const zeroAsString = {
+      ...makeItem(),
+      calories_kcal: '0.00' as unknown as number,
+    }
+
+    render(<MenuItemRow item={zeroAsString} />)
+
+    expect(screen.getByText('0 kcal')).toBeInTheDocument()
+    expect(screen.queryByText('無資料')).toBeNull()
+  })
+
+  it('無法解析的值退回「無資料」而非顯示 NaN', () => {
+    const garbage = {
+      ...makeItem(),
+      calories_kcal: 'abc' as unknown as number,
+    }
+
+    render(<MenuItemRow item={garbage} />)
+
+    expect(screen.getByText('無資料')).toBeInTheDocument()
+    expect(screen.queryByText(/NaN/)).toBeNull()
+  })
+})
+
 describe('MenuItemRow — 一般呈現', () => {
   it('顯示餐點名稱與四項營養值', () => {
     render(<MenuItemRow item={makeItem()} />)

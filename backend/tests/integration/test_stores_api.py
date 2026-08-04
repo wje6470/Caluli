@@ -225,6 +225,65 @@ def test_null_and_zero_nutrition_are_preserved_distinctly(client, db_session):
     assert float(items["零卡"]["fat_g"]) == 0.0
 
 
+def test_numeric_fields_are_json_numbers_not_strings(client, db_session):
+    """★ 數值欄位在 JSON 中必須是 number，不能是 string。
+
+    contracts/openapi.yaml 宣告 `type: number`，前端型別也是 `number`。
+    若 schema 改用 Decimal，Pydantic v2 會序列化成字串（"650.00"），
+    前端任何 `value.toFixed()` 都會拋 TypeError——這個 bug 實際發生過
+    （MenuItemRow 崩潰）。
+
+    這支測試直接斷言 JSON 的原生型別，是防止改回 Decimal 的唯一護欄：
+    用 float(x) 或 == 比較都會被字串矇混過去。
+    """
+    store = _add_store(db_session, "型別測試店", km=1.0)
+    db_session.add(
+        MenuItem(
+            store_id=store.id,
+            name="一般餐點",
+            calories=Decimal("650.00"),
+            protein_g=Decimal("25.00"),
+            carbs_g=Decimal("80.00"),
+            fat_g=Decimal("24.00"),
+        )
+    )
+    db_session.flush()
+
+    # --- 店家清單：座標與距離 ---
+    body = client.get(f"/api/v1/stores?lat={TAIPEI_LAT}&lng={TAIPEI_LNG}").json()
+    s = body["stores"][0]
+    assert isinstance(s["latitude"], float), f"latitude 應為 number，實際 {type(s['latitude'])}"
+    assert isinstance(s["longitude"], float), f"longitude 應為 number，實際 {type(s['longitude'])}"
+    assert isinstance(s["distance_m"], int), f"distance_m 應為整數，實際 {type(s['distance_m'])}"
+    assert isinstance(body["total_store_count"], int)
+    assert isinstance(body["radius_km"], float)
+
+    # --- 餐點：四個營養欄位 ---
+    items = client.get(f"/api/v1/stores/{store.id}/menu-items").json()["menu_items"]
+    item = items[0]
+    for field in ("calories_kcal", "protein_g", "carbs_g", "fat_g"):
+        assert isinstance(item[field], float), (
+            f"{field} 應為 number，實際 {type(item[field])} = {item[field]!r}。"
+            "schema 若用 Decimal，Pydantic 會序列化成字串而讓前端 toFixed 崩潰。"
+        )
+    assert item["calories_kcal"] == 650.0
+
+
+def test_zero_stays_number_and_null_stays_null_on_the_wire(client, db_session):
+    """0 與 null 在 JSON 中的型別也必須正確（FR-025 的傳輸層前提）。"""
+    store = _add_store(db_session, "零值型別店", km=1.0)
+    db_session.add(
+        MenuItem(store_id=store.id, name="零卡", calories=Decimal("0"), protein_g=Decimal("0"))
+    )
+    db_session.flush()
+
+    item = client.get(f"/api/v1/stores/{store.id}/menu-items").json()["menu_items"][0]
+
+    assert isinstance(item["calories_kcal"], float)
+    assert item["calories_kcal"] == 0.0
+    assert item["carbs_g"] is None  # 未設定 → null，不是 0
+
+
 def test_same_name_menu_items_not_deduplicated(client, db_session):
     store = _add_store(db_session, "同名餐點店", km=1.0)
     for _ in range(2):

@@ -19,7 +19,11 @@ const liffMock = {
 
 vi.mock('@line/liff', () => ({ default: liffMock }))
 
-const envMock = { liffId: 'test-liff-id' as string | null, apiBaseUrl: 'http://api.test' }
+const envMock = {
+  liffId: 'test-liff-id' as string | null,
+  apiBaseUrl: 'http://api.test',
+  devForceLiff: false,
+}
 vi.mock('@/lib/env', () => ({ env: envMock }))
 
 async function freshModule() {
@@ -30,6 +34,7 @@ async function freshModule() {
 beforeEach(() => {
   vi.clearAllMocks()
   envMock.liffId = 'test-liff-id'
+  envMock.devForceLiff = false
 })
 
 describe('initRuntimeEnv', () => {
@@ -137,5 +142,56 @@ describe('LIFF 能力包裝在 LIFF 環境', () => {
     liffMock.closeWindow.mockReturnValue(undefined)
     const { closeLiffWindow } = await liffModule()
     expect(closeLiffWindow()).toBe(true)
+  })
+})
+
+/**
+ * 🔧 本機開發用的 LIFF 覆寫（第二輪新增）。
+ *
+ * ★ 最重要的是最後一支測試：**production build 中必須完全無效**。
+ * 沒有那道保護，這個開關就成了繞過 FR-002 入口限制的後門。
+ */
+describe('NEXT_PUBLIC_DEV_FORCE_LIFF（僅本機開發）', () => {
+  it('開發模式下設為 true 時，即使不在 LINE App 內也視為 liff', async () => {
+    envMock.devForceLiff = true
+    // 桌機瀏覽器的真實情況：init 成功但不在 client 內。
+    liffMock.init.mockResolvedValue(undefined)
+    liffMock.isInClient.mockReturnValue(false)
+
+    const { initRuntimeEnv, isInLiff } = await freshModule()
+
+    expect(await initRuntimeEnv()).toBe('liff')
+    expect(isInLiff()).toBe(true)
+  })
+
+  it('未設定時維持原本判斷，不影響既有行為', async () => {
+    envMock.devForceLiff = false
+    liffMock.init.mockResolvedValue(undefined)
+    liffMock.isInClient.mockReturnValue(false)
+
+    const { initRuntimeEnv } = await freshModule()
+
+    expect(await initRuntimeEnv()).toBe('web')
+  })
+
+  /**
+   * ★ production build 中無效這件事**無法在此以執行期測試驗證**——而原因
+   * 正是那道保護本身：打包器（Vite／Next.js）在編譯期就把
+   * `process.env.NODE_ENV` 替換成字面值並摺疊掉整段分支，執行期改寫
+   * `process.env` 已經來不及，因為那個判斷早就不存在於產物中了。
+   *
+   * 這比執行期檢查更強：production 產物裡根本沒有這條路徑。
+   *
+   * 驗證方式改為**對真實 build 產物做字串搜尋**，見
+   * `npm run verify:no-dev-liff`（package.json）——production build 的
+   * JS chunk 中不得出現 NEXT_PUBLIC_DEV_FORCE_LIFF 的取值邏輯。
+   */
+  it('guard 條件同時包含 NODE_ENV 檢查（原始碼層級斷言）', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync('src/lib/liff/environment.ts', 'utf-8')
+
+    // 兩個條件必須同時存在於同一個判斷式中。
+    expect(source).toContain("process.env.NODE_ENV !== 'production'")
+    expect(source).toMatch(/NODE_ENV !== 'production'\s*&&\s*env\.devForceLiff/)
   })
 })

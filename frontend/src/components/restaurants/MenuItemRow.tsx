@@ -25,12 +25,29 @@ import type { MenuItem } from '@/lib/api/types'
 
 const NO_DATA = '無資料'
 
-/** null → 「無資料」；0 → 「0」。刻意不使用 || 或 ?? 以外的簡寫。 */
+/**
+ * null → 「無資料」；0 → 「0」。刻意不使用 || 或 ?? 以外的簡寫。
+ *
+ * ⚠️ 先經過 Number() 再運算：型別上這裡是 `number`，但曾經因為後端把
+ * Decimal 序列化成字串（`"650.00"`）而讓 `value.toFixed()` 直接拋
+ * TypeError 並整頁崩潰。後端已修正為輸出 JSON number（schemas/store.py），
+ * 且有整合測試守著 wire format；這層轉換是額外的保險——顯示元件不該因為
+ * 上游型別漂移就讓整個畫面掛掉。
+ */
 function formatNutrient(value: number | null, unit: string): string {
-  if (value === null) return NO_DATA
+  if (value === null || value === undefined) return NO_DATA
+
+  const n = Number(value)
+  if (!Number.isFinite(n)) return NO_DATA
+
   // 去掉無意義的小數（30.00 → 30，30.20 → 30.2）。
-  const text = Number.isInteger(value) ? String(value) : String(Number(value.toFixed(1)))
+  const text = Number.isInteger(n) ? String(n) : String(Number(n.toFixed(1)))
   return `${text}${unit}`
+}
+
+/** 是否為「店家未提供」。只有 null／undefined 算缺值——0 是有效數值。 */
+function isMissing(value: number | null): boolean {
+  return value === null || value === undefined
 }
 
 export function MenuItemRow({ item }: { item: MenuItem }) {
@@ -42,7 +59,9 @@ export function MenuItemRow({ item }: { item: MenuItem }) {
         <h3 className="text-sm font-bold">{item.name}</h3>
         <p
           className={`numeric-stable shrink-0 text-sm font-black ${
-            item.calories_kcal === null ? 'text-slate-400' : 'text-brand-600 dark:text-brand-400'
+            isMissing(item.calories_kcal)
+              ? 'text-slate-400'
+              : 'text-brand-600 dark:text-brand-400'
           }`}
         >
           {calories}
@@ -59,7 +78,7 @@ export function MenuItemRow({ item }: { item: MenuItem }) {
 }
 
 function Nutrient({ label, value }: { label: string; value: number | null }) {
-  const missing = value === null
+  const missing = isMissing(value)
 
   return (
     <div className="rounded-xl bg-slate-50 px-2 py-1.5 dark:bg-slate-800/60">

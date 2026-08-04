@@ -24,6 +24,19 @@ export const env = {
 
   /** OAuth 回呼位址。 */
   lineRedirectUri: process.env.NEXT_PUBLIC_LINE_REDIRECT_URI ?? null,
+
+  /**
+   * 🔧 **僅供本機開發**：強制將執行環境視為 LIFF。
+   *
+   * 存在的理由：推薦餐廳模組（第二輪）僅於 LIFF 入口提供，而桌機瀏覽器
+   * 無論如何都無法讓 `liff.isInClient()` 為真——沒有這個開關，開發者除了
+   * 實機在 LINE App 內開啟之外，沒有任何方式能看到那些畫面。
+   *
+   * ⚠️ **安全性**：在 production build 中**永遠無效**（見 environment.ts 的
+   * `isDevForcedLiff()`，它同時檢查 `NODE_ENV !== 'production'`）。因此這個
+   * 開關無法用來繞過正式環境的入口限制。`environment.test.ts` 有對應斷言。
+   */
+  devForceLiff: process.env.NEXT_PUBLIC_DEV_FORCE_LIFF === 'true',
 } as const
 
 /** 一般網頁 OAuth 是否可用（設定不全時，登入頁需顯示可理解的說明而非空白）。 */
