@@ -28,9 +28,9 @@ class HealthProfile(Base, TimestampMixin):
         ),
         # FR-014 的合理生理範圍。與 Pydantic schema 雙層驗證：
         # API 層負責產生可讀的錯誤訊息，DB 層負責兜底。
-        CheckConstraint("age_years BETWEEN 15 AND 90", name="ck_health_profiles_age"),
-        CheckConstraint("height_cm BETWEEN 100 AND 250", name="ck_health_profiles_height"),
-        CheckConstraint("weight_kg BETWEEN 25 AND 300", name="ck_health_profiles_weight"),
+        CheckConstraint("age_years BETWEEN 1 AND 100", name="ck_health_profiles_age"),
+        CheckConstraint("height_cm BETWEEN 60 AND 280", name="ck_health_profiles_height"),
+        CheckConstraint("weight_kg BETWEEN 30 AND 120", name="ck_health_profiles_weight"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()

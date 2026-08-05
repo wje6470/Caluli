@@ -55,9 +55,9 @@ food_nutrition_references  ← 獨立資料集，與未來的店家／餐點資�
 | `id` | UUID | PK | |
 | `user_id` | UUID | NOT NULL, UNIQUE, FK → `users(id)` ON DELETE CASCADE | 1:1 由 UNIQUE 保證 |
 | `gender` | TEXT | NOT NULL, CHECK IN (`'male'`,`'female'`) | BMR 公式所需（OQ-7） |
-| `age_years` | SMALLINT | NOT NULL, CHECK 15–90 | 儲存歲數而非出生日期（OQ-8） |
-| `height_cm` | NUMERIC(5,1) | NOT NULL, CHECK 100.0–250.0 | |
-| `weight_kg` | NUMERIC(5,1) | NOT NULL, CHECK 25.0–300.0 | |
+| `age_years` | SMALLINT | NOT NULL, CHECK 1–100 | 儲存歲數而非出生日期（OQ-8） |
+| `height_cm` | NUMERIC(5,1) | NOT NULL, CHECK 60.0–280.0 | |
+| `weight_kg` | NUMERIC(5,1) | NOT NULL, CHECK 30.0–120.0 | |
 | `activity_level` | TEXT | NOT NULL, CHECK IN (`'low'`,`'moderate'`,`'high'`) | 係數 1.2 / 1.45 / 1.75 |
 | `bmr_kcal` | NUMERIC(7,2) | NOT NULL | 後端計算後寫入，不接受客戶端提供 |
 | `tdee_kcal` | NUMERIC(7,2) | NOT NULL | 即每日建議熱量 |

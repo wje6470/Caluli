@@ -30,9 +30,9 @@ class HealthProfileInput(BaseModel):
     """
 
     gender: Gender
-    age_years: int = Field(ge=15, le=90)
-    height_cm: Decimal = Field(ge=100, le=250)
-    weight_kg: Decimal = Field(ge=25, le=300)
+    age_years: int = Field(ge=1, le=100)
+    height_cm: Decimal = Field(ge=60, le=280)
+    weight_kg: Decimal = Field(ge=30, le=120)
     activity_level: ActivityLevel
 
 

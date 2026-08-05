@@ -433,9 +433,9 @@ components:
       required: [gender, age_years, height_cm, weight_kg, activity_level]
       properties:
         gender: { type: string, enum: [male, female] }
-        age_years: { type: integer, minimum: 15, maximum: 90 }
-        height_cm: { type: number, minimum: 100, maximum: 250 }
-        weight_kg: { type: number, minimum: 25, maximum: 300 }
+        age_years: { type: integer, minimum: 1, maximum: 100 }
+        height_cm: { type: number, minimum: 60, maximum: 280 }
+        weight_kg: { type: number, minimum: 30, maximum: 120 }
         activity_level: { type: string, enum: [low, moderate, high] }
 
     HealthProfile:

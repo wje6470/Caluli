@@ -213,9 +213,9 @@ function ProfileEditSheet({
   })
 
   const fields = [
-    { key: 'age_years', label: '年齡', unit: '歲', min: 15, max: 90, step: 1 },
-    { key: 'height_cm', label: '身高', unit: 'cm', min: 100, max: 250, step: 1 },
-    { key: 'weight_kg', label: '體重', unit: 'kg', min: 25, max: 300, step: 0.5 },
+    { key: 'age_years', label: '年齡', unit: '歲', min: 1, max: 100, step: 1 },
+    { key: 'height_cm', label: '身高', unit: 'cm', min: 60, max: 280, step: 1 },
+    { key: 'weight_kg', label: '體重', unit: 'kg', min: 30, max: 120, step: 0.5 },
   ] as const
 
   return (

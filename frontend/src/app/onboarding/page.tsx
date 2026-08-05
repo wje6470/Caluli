@@ -113,8 +113,8 @@ export default function OnboardingPage() {
             hint="年齡影響基礎代謝率的估算"
             value={draft.age_years}
             unit="歲"
-            min={15}
-            max={90}
+            min={1}
+            max={100}
             step={1}
             onChange={(v) => patch({ age_years: v })}
           />
@@ -127,8 +127,8 @@ export default function OnboardingPage() {
             hint="拖動滑桿調整"
             value={draft.height_cm}
             unit="cm"
-            min={100}
-            max={250}
+            min={60}
+            max={280}
             step={1}
             onChange={(v) => patch({ height_cm: v })}
           />
@@ -141,8 +141,8 @@ export default function OnboardingPage() {
             hint="日後可於設定頁隨時更新"
             value={draft.weight_kg}
             unit="kg"
-            min={25}
-            max={300}
+            min={30}
+            max={120}
             step={0.5}
             onChange={(v) => patch({ weight_kg: v })}
           />
