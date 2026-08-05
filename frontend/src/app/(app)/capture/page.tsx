@@ -9,7 +9,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { EmptyResultGuide, ErrorState, LoadingState } from '@/components/capture/states'
 import { RecognitionItemCard } from '@/components/capture/RecognitionItemCard'
@@ -51,6 +51,14 @@ export default function CapturePage() {
   const [items, setItems] = useState<DraftItem[]>([])
   const [mealType, setMealType] = useState<MealType>(defaultMealType)
   const [fileError, setFileError] = useState<string | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+
+  // object URL 隨 photoPreview 汰換或元件卸載即釋放，避免記憶體洩漏。
+  useEffect(() => {
+    return () => {
+      if (photoPreview) URL.revokeObjectURL(photoPreview)
+    }
+  }, [photoPreview])
 
   const totals = useMemo(() => sumNutrients(items.map(nutrientsOf)), [items])
 
@@ -67,6 +75,7 @@ export default function CapturePage() {
       setFileError(null)
 
       const compressed = await compressImage(file)
+      setPhotoPreview(URL.createObjectURL(compressed))
       await recognition.analyze(compressed)
     },
     [recognition]
@@ -103,6 +112,7 @@ export default function CapturePage() {
     recognition.reset()
     setItems([])
     setSeededKey(null)
+    setPhotoPreview(null)
     router.replace('/dashboard')
   }, [recognition, router])
 
@@ -111,6 +121,7 @@ export default function CapturePage() {
     setItems([])
     setSeededKey(null)
     setFileError(null)
+    setPhotoPreview(null)
   }, [recognition])
 
   return (
@@ -178,6 +189,14 @@ export default function CapturePage() {
             </span>
             <span className="w-10" />
           </header>
+
+          {photoPreview && (
+            <img
+              src={photoPreview}
+              alt="剛拍攝的餐點照片"
+              className="h-48 w-full rounded-3xl object-cover shadow-sm"
+            />
+          )}
 
           <div>
             <label htmlFor="meal-type" className="mb-1 block text-[11px] font-bold uppercase text-slate-400">

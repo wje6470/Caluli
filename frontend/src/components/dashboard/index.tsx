@@ -3,6 +3,7 @@
 /** 儀表板元件群（T092–T096）。 */
 
 import { EmptyState } from '@/components/ui/feedback'
+import { useMealPhoto } from '@/hooks/useMealPhoto'
 import type { DashboardResponse, MealRecord, Nutrients } from '@/lib/api/types'
 import { formatGrams, formatKcal } from '@/lib/nutrition'
 
@@ -224,49 +225,69 @@ export function MealList({
   return (
     <ul className="space-y-3">
       {records.map((record) => (
-        <li
-          key={record.id}
-          className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800">
-                {MEAL_LABELS[record.meal_type] ?? record.meal_type}
-              </span>
-              <p className="mt-1.5 truncate text-sm font-black">
-                {record.items.map((item) => item.food_name).join('、') || '（無品項）'}
-              </p>
-              <p className="numeric-stable mt-1 text-[11px] text-slate-400">
-                蛋白質 {formatGrams(record.totals.protein_g)}g ・ 碳水{' '}
-                {formatGrams(record.totals.carbs_g)}g ・ 脂肪 {formatGrams(record.totals.fat_g)}g
-              </p>
-            </div>
-            <div className="shrink-0 text-right">
-              <p className="numeric-stable text-base font-black text-brand-600 dark:text-brand-400">
-                {formatKcal(record.totals.calories_kcal)}
-                <span className="ml-0.5 text-[10px] font-medium text-slate-400">kcal</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-3 flex gap-2 border-t border-slate-100 pt-2.5 dark:border-slate-800">
-            <button
-              type="button"
-              onClick={() => onEdit(record)}
-              className="flex-1 rounded-xl py-1.5 text-[11px] font-bold text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800"
-            >
-              編輯
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete(record)}
-              className="flex-1 rounded-xl py-1.5 text-[11px] font-bold text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-950/40"
-            >
-              刪除
-            </button>
-          </div>
-        </li>
+        <MealListItem key={record.id} record={record} onEdit={onEdit} onDelete={onDelete} />
       ))}
     </ul>
+  )
+}
+
+function MealListItem({
+  record,
+  onEdit,
+  onDelete,
+}: {
+  record: MealRecord
+  onEdit: (record: MealRecord) => void
+  onDelete: (record: MealRecord) => void
+}) {
+  const photoUrl = useMealPhoto(record.id, record.has_photo)
+
+  return (
+    <li className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-start justify-between gap-3">
+        {photoUrl && (
+          <img
+            src={photoUrl}
+            alt=""
+            className="h-14 w-14 shrink-0 rounded-2xl object-cover"
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800">
+            {MEAL_LABELS[record.meal_type] ?? record.meal_type}
+          </span>
+          <p className="mt-1.5 truncate text-sm font-black">
+            {record.items.map((item) => item.food_name).join('、') || '（無品項）'}
+          </p>
+          <p className="numeric-stable mt-1 text-[11px] text-slate-400">
+            蛋白質 {formatGrams(record.totals.protein_g)}g ・ 碳水{' '}
+            {formatGrams(record.totals.carbs_g)}g ・ 脂肪 {formatGrams(record.totals.fat_g)}g
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="numeric-stable text-base font-black text-brand-600 dark:text-brand-400">
+            {formatKcal(record.totals.calories_kcal)}
+            <span className="ml-0.5 text-[10px] font-medium text-slate-400">kcal</span>
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 flex gap-2 border-t border-slate-100 pt-2.5 dark:border-slate-800">
+        <button
+          type="button"
+          onClick={() => onEdit(record)}
+          className="flex-1 rounded-xl py-1.5 text-[11px] font-bold text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800"
+        >
+          編輯
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(record)}
+          className="flex-1 rounded-xl py-1.5 text-[11px] font-bold text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-950/40"
+        >
+          刪除
+        </button>
+      </div>
+    </li>
   )
 }

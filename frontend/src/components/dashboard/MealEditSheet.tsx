@@ -7,6 +7,7 @@ import { useState } from 'react'
 
 import { PortionSlider } from '@/components/capture/PortionSlider'
 import { Modal } from '@/components/ui/Modal'
+import { useMealPhoto } from '@/hooks/useMealPhoto'
 import { mealRecordApi } from '@/lib/api/endpoints'
 import type { MealRecord, MealType } from '@/lib/api/types'
 import { formatGrams, formatKcal, scaleNutrients, sumNutrients } from '@/lib/nutrition'
@@ -49,6 +50,7 @@ export function MealEditSheet({
   )
 
   const totals = sumNutrients(items.map((item) => scaleNutrients(item.per100g, item.grams)))
+  const photoUrl = useMealPhoto(record.id, record.has_photo)
 
   const save = useMutation({
     mutationFn: () =>
@@ -71,6 +73,14 @@ export function MealEditSheet({
   return (
     <Modal title="編輯紀錄" onClose={onClose}>
       <>
+        {photoUrl && (
+          <img
+            src={photoUrl}
+            alt="餐點照片"
+            className="mb-4 h-40 w-full rounded-3xl object-cover shadow-sm"
+          />
+        )}
+
         <div className="mb-4 grid grid-cols-4 gap-2">
           {MEAL_TYPES.map((option) => (
             <button

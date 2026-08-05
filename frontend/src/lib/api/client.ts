@@ -136,3 +136,29 @@ export const api = {
   put: <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 }
+
+/**
+ * 圖片端點需要 Bearer token，`<img src>` 無法夾帶自訂 header，
+ * 故以 fetch 取得二進位內容後轉為 blob object URL 供 <img> 使用。
+ */
+export async function fetchAuthedBlob(path: string, signal?: AbortSignal): Promise<Blob> {
+  const headers: Record<string, string> = {}
+  const token = tokenStore.get()
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  let response: Response
+  try {
+    response = await fetch(`${env.apiBaseUrl}${path}`, { headers, signal })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    throw ApiError.network()
+  }
+
+  if (response.status === 401) {
+    tokenStore.clear()
+    throw await parseError(response)
+  }
+  if (!response.ok) throw await parseError(response)
+
+  return response.blob()
+}
